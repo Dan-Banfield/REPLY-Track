@@ -1,0 +1,7 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# Per-user stat files are runtime data, not source.
+data/users/*.md
+!data/users/.gitkeep
