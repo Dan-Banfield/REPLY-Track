@@ -2,7 +2,7 @@
 
 How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](./ux.md), which covers the UI and design.
 
-_Last updated: step 5 of 7 (dashboard layout and navigation)._
+_Last updated: step 6 of 7 (Overview page per role)._
 
 ---
 
@@ -29,7 +29,7 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
   The app reads the role from `profiles` in `getCurrentUser()`.
 - **Logout**: a Server Action ends the session, then a full page load goes to `/login`. It's triggered from the navigation rail, or from the error page.
 - **Dashboard layout** (`src/app/dashboard/layout.tsx`): every page under `/dashboard` gets an M3 navigation rail. Its items come from one config array (`src/config/navigation.ts`), filtered by the user's role on the server (details in `ux.md`).
-- **Overview** (`/dashboard`) is still placeholder content ("Signed in as … (Teacher/Student)"). Step 6 makes it role-specific. There is no page at `/`; the proxy always redirects it.
+- **Overview** (`/dashboard`): shows `TeacherOverview` or `StudentOverview` depending on the user's role. Both are placeholder cards for now (see ux.md). There is no page at `/`; the proxy always redirects it.
 - **Error page** (`src/app/error.tsx`): any page that fails to load (e.g. a missing profile) shows "Something went wrong" with **Try again** and **Log out**, so users are never stuck.
 - `npm run build`, `npm run lint` and `npx tsc --noEmit` all pass.
 - The SQL was tested in PGlite (Postgres 17 in WebAssembly) with a stand-in for Supabase's `auth` schema and API roles. Coverage: re-running the script, backfill, the trigger with valid/invalid/missing roles, RLS (own-row read; update/insert/delete denied; `anon` denied) and cascade delete. It has **not yet been run in a real Supabase project**.
@@ -42,12 +42,14 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
   - the error page for a user without a profile
   - the navigation rail: items per role, active state, icons, keyboard focus, Log out
   - adding a teacher-only page via the config (in a throwaway copy)
+  - the Overview content for each role, on desktop and phone widths
   
   **Not yet tested against a real Supabase project**, because `.env` still has placeholders.
 
 **Not built yet**
 
-- Role-specific Overview content (step 6), README (step 7).
+- README with setup instructions (step 7).
+- Real content: the Overview cards are placeholders, and there are no data tables besides `profiles`.
 - No password-reset page (out of scope).
 
 ---
@@ -78,8 +80,13 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
 │   │   └── dashboard/        # Everything under /dashboard (login required)
 │   │       ├── layout.tsx        # Shell: navigation rail (role-filtered) + <main>
 │   │       ├── layout.module.css
-│   │       ├── page.tsx          # /dashboard = Overview (placeholder content until step 6)
-│   │       └── page.module.css
+│   │       ├── page.tsx          # /dashboard = Overview: picks the Overview for the user's role
+│   │       ├── page.module.css
+│   │       └── _overview/        # Private folder (not a route): Overview content per role
+│   │           ├── TeacherOverview.tsx
+│   │           ├── StudentOverview.tsx
+│   │           ├── PlaceholderCard.tsx   # M3 filled card used by both
+│   │           └── overview.module.css
 │   ├── config/
 │   │   └── navigation.ts     # NAV_ITEMS: the one list of dashboard pages (label, href, icon, roles)
 │   ├── components/
@@ -108,7 +115,7 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
 Conventions:
 
 - Import alias `@/*` → `src/*`.
-- Pages and their route-only components live in the route folder. Shared logic lives in `src/lib/`; shared UI lives in `src/components/`.
+- Pages and their route-only components live in the route folder. Use an underscore folder (e.g. `_overview/`) for components that belong to one route; Next never turns `_folders` into URLs. Shared logic lives in `src/lib/`; shared UI lives in `src/components/`.
 - Route paths used in code come from `src/lib/auth/routes.ts`, not string literals.
 - Database changes go in a **new** file in `supabase/migrations/` named `<YYYYMMDDHHMMSS>_<what>.sql` (the Supabase CLI convention). Never edit a file that has already been run in a real project. Write migrations so they can be re-run safely (`if not exists`, `drop … if exists`, `on conflict do nothing`).
 - New app pages go under `src/app/dashboard/` and get one entry in `src/config/navigation.ts` (see ux.md, "Navigation config"). App-wide configuration lives in `src/config/`.
@@ -133,7 +140,8 @@ Conventions:
 | `src/app/dashboard/layout.tsx` | Dashboard shell. Inside `<Suspense>`, `RoleNavigation` calls `getCurrentUser()` and renders `<NavigationRail items={navItemsFor(role)} />`. |
 | `src/components/navigation/NavigationRail.tsx` | Client component: M3 rail from the given items, active item from `usePathname()`, Log out at the bottom. |
 | `src/components/material/material-symbols.ts` | Builds the Google Fonts URL for the icon font from the icons in `NAV_ITEMS` + `OTHER_ICONS`. |
-| `src/app/dashboard/page.tsx` | Overview page (placeholder content). Shows the user via `getCurrentUser()` inside `<Suspense>`. |
+| `src/app/dashboard/page.tsx` | Overview page. Inside `<Suspense>`, `RoleOverview` calls `getCurrentUser()` and renders `OVERVIEW_BY_ROLE[role]`, a `Record<Role, Component>`, so TypeScript forces an Overview for every role. |
+| `src/app/dashboard/_overview/TeacherOverview.tsx`, `StudentOverview.tsx` | The per-role Overview content (placeholder cards). Server Components that receive the `CurrentUser`. |
 | `src/app/(auth)/login/page.tsx` | Login page. Reads `?signup=confirm|done` (behind `<Suspense>`) to show the post-sign-up notice. |
 | `src/app/(auth)/signup/SignupForm.tsx` | Sign-up form with the role radio group. |
 | `src/components/material/MaterialWeb.tsx` | The one place where Material Web components are imported/registered (plus the hydration rule; see ux.md). |
@@ -273,7 +281,10 @@ async function TeacherOnlyContent() {
 **Common admin tasks:**
 
 - *Change a user's role:* Supabase → Table Editor → `profiles` → edit `role`, or run `update public.profiles set role = 'teacher' where id = '<user uuid>';` The user sees the new role on their next page load.
-- *Add a role (e.g. `admin`):* write a new migration with `alter type public.user_role add value 'admin';`. Then add it to `ROLES` and `ROLE_LABELS` in `src/lib/auth/roles.ts`, and to the `roles` of the relevant entries in `src/config/navigation.ts`. The sign-up form lists every entry in `ROLES`, so remove any role users shouldn't pick there.
+- *Add a role (e.g. `admin`):* write a new migration with `alter type public.user_role add value 'admin';`. Then:
+  - add it to `ROLES` and `ROLE_LABELS` in `src/lib/auth/roles.ts`
+  - add it to the `roles` of the relevant entries in `src/config/navigation.ts`
+  - give it an Overview in `OVERVIEW_BY_ROLE` (TypeScript will report it as missing) The sign-up form lists every entry in `ROLES`, so remove any role users shouldn't pick there.
 
 ### Auth flow: login
 
@@ -379,12 +390,12 @@ Planned build order. Each step is reviewed and committed separately.
 - [x] **3. Route protection**: proxy with session refresh and redirects, server-side `getCurrentUser()`, logout
 - [x] **4. Roles**: `profiles` table + `user_role` enum, sign-up trigger, backfill, RLS (read own, never change role), role in `getCurrentUser()`, error page
 - [x] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with an M3 navigation rail built from `NAV_ITEMS` (filtered by role on the server), Log out in the rail
-- [ ] **6. Overview page**: replace the placeholder content in `src/app/dashboard/page.tsx` with different placeholder content for teachers and students (read `role` from `getCurrentUser()` inside `<Suspense>`)
+- [x] **6. Overview page**: different placeholder content for teachers and students (`OVERVIEW_BY_ROLE` in `src/app/dashboard/page.tsx`)
 - [ ] **7. README**: install, env vars, Supabase settings, SQL, run locally
 
 Left unfinished on purpose:
 
-- The Overview page content is a placeholder (heading, email + role).
+- The Overview cards are placeholders with no data behind them. Real content will need its own tables and RLS policies (new migrations), read on the server in the Overview components.
 - `src/lib/supabase/client.ts` exists but has no caller yet.
 - Database types are not generated. Query results are validated at runtime (`isRole`). When more tables arrive, consider `npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts` and pass the `Database` type to the clients.
 - Each protected page load makes two Supabase calls for the user (claims + profile). If that becomes a bottleneck, a Supabase *custom access token hook* can put the role into the JWT instead.

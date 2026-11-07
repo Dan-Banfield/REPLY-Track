@@ -2,7 +2,7 @@
 
 The Material 3 theme, the components used, the layout, how navigation works and what each role sees. Read it together with [`logic.md`](./logic.md), which covers the app logic.
 
-_Last updated: step 5 of 7 (dashboard layout and navigation)._
+_Last updated: step 6 of 7 (Overview page per role)._
 
 ---
 
@@ -16,7 +16,7 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
 - **Material Symbols** icons (Outlined), loaded from Google Fonts and limited to the icons the app uses.
 - **Login page** (`/login`) and **sign-up page** (`/signup`), sharing one M3 outlined-card layout. Each links to the other.
 - **Dashboard layout** (`/dashboard/**`): an M3 **navigation rail** on the left, page content on the right. The rail is built from one config array (`src/config/navigation.ts`), filtered by role, with **Log out** at the bottom. It currently has one destination: **Overview** (`/dashboard`).
-- **Overview page** (`/dashboard`): placeholder "Overview" heading with "Signed in as … (Teacher)" or "(Student)". Step 6 adds the role-specific content.
+- **Overview page** (`/dashboard`): a welcome line and three placeholder cards (M3 filled cards). The cards are different for teachers and students.
 - **Error page** for every route: "Something went wrong" with **Try again** (filled) and **Log out** (outlined).
 - Users never see a page at `/`. They are redirected to `/login` or `/dashboard`.
 - Reusable form building blocks: `MaterialForm`, `SubmitButton`, `FormError` (`src/components/material/MaterialForm.tsx`).
@@ -25,7 +25,7 @@ _Last updated: step 5 of 7 (dashboard layout and navigation)._
 
 **Not built yet**
 
-- Role-specific Overview content (step 6). See [Next steps](#next-steps).
+- Real content behind the Overview cards (they are placeholders). See [Next steps](#next-steps).
 
 ---
 
@@ -189,7 +189,7 @@ Every page under `/dashboard` gets this shell:
 ```
 ┌──────┬─────────────────────────────────────────────┐
 │ ▣    │ Overview                  ← page <h1>        │
-│Overv.│ Signed in as you@x.com (Teacher)             │
+│Overv.│ Welcome, you@x.com. …     ← page content     │
 │      │                                              │
 │      │   <main>: the page, 24px padding             │
 │      │                                              │
@@ -222,15 +222,28 @@ M3 spec: https://m3.material.io/components/navigation-rail. Material Web has no 
 - **Accessibility:** a real `<nav>` with a `<ul>` of links; icons are hidden from screen readers because the label names the item. Tab order: destinations top to bottom, then Log out.
 - **Log out** in the rail uses `useLogout()` from `src/components/auth/LogoutButton.tsx`, the same behaviour as the standalone `LogoutButton` (full page load to `/login`).
 
-### Overview page (`/dashboard`, placeholder)
+### Overview page (`/dashboard`)
 
 ```
-Overview                                 ← headline-medium
-Signed in as you@example.com (Teacher)   ← body-large, streams in ("Loading…" first)
+Overview                                                       ← headline-medium (static)
+Welcome, you@example.com. Here's what's happening in your classes.   ← body-large, on-surface-variant
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│ My classes       │ │ Student progress │ │ Recent activity  │  ← title-medium
+│ Your classes will│ │ A summary of …   │ │ The latest …     │  ← body-medium
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+   M3 filled cards, grid: as many 240px+ columns as fit (3 on desktop, 1 on phones)
 ```
 
-- Step 6 replaces this with different placeholder content for teachers and students.
-- The role label comes from `ROLE_LABELS` in `src/lib/auth/roles.ts`.
+- The heading is static. Everything under it depends on the role, so it streams in behind `<Suspense>` ("Loading…" first).
+- **Cards** (`_overview/PlaceholderCard.tsx`) follow the M3 **filled card** spec: `surface-container-highest` background, medium corners (12px), 16px padding, title-medium heading (`<h2>`), body-medium text in `on-surface-variant`. Material Web's card is still in `labs/`, so this is a plain `<section>` styled with tokens. If cards are needed on other pages, move it to `src/components/`.
+- **Per-role content** lives in `src/app/dashboard/_overview/`:
+
+  | | Teacher (`TeacherOverview.tsx`) | Student (`StudentOverview.tsx`) |
+  | --- | --- | --- |
+  | Welcome line | "Here's what's happening in your classes." | "Here's an overview of your learning." |
+  | Cards | My classes · Student progress · Recent activity | My progress · Coming up · Recent feedback |
+
+- **To change what a role sees:** edit that role's component. Each receives the `user` (`id`, `email`, `role`) as a prop and is a Server Component, so it can fetch data directly. The mapping from role to component is `OVERVIEW_BY_ROLE` in `src/app/dashboard/page.tsx`.
 
 ### Error page (`src/app/error.tsx`)
 
@@ -281,9 +294,9 @@ This exact example was tried during step 5 (in a throwaway copy): teachers saw O
 | | Teacher | Student |
 | --- | --- | --- |
 | Navigation rail | Overview, Log out | Overview, Log out |
-| Overview page | placeholder + "(Teacher)" | placeholder + "(Student)" |
+| Overview page | Welcome line + My classes, Student progress, Recent activity | Welcome line + My progress, Coming up, Recent feedback |
 
-The rail is already filtered by role, but the only entry (Overview) is for both roles. Step 6 gives the Overview page different content per role.
+The rail is filtered by role, but its only entry (Overview) is for both roles. Teacher-only or student-only pages can be added through the [navigation config](#navigation-config-srcconfignavigationts).
 
 ---
 
@@ -293,7 +306,8 @@ The rail is already filtered by role, but the only entry (Overview) is for both 
 - [x] **Step 3:** removed the temporary page at `/` (it now redirects), added the dashboard placeholder and the Log out button.
 - [x] **Step 4:** the role is shown on the dashboard placeholder; error page with Try again / Log out.
 - [x] **Step 5:** dashboard layout with an M3 navigation rail built from the config array (role-filtered), Log out in the rail, Material Symbols icons.
-- [ ] **Step 6:** Overview page with different placeholder content for teachers and students.
+- [x] **Step 6:** Overview page with different placeholder content (cards) for teachers and students.
+- Replace the placeholder cards with real content as features are built.
 - Possible later additions (not requested):
   - a "confirm password" field on sign-up and a password-reset flow
   - on phones (< 600px wide), M3 recommends a bottom *navigation bar* instead of a rail; it could be rendered from the same `NAV_ITEMS`
