@@ -2,7 +2,7 @@
 
 How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](./ux.md), which covers the UI and design.
 
-_Last updated: step 6 of 7 (Overview page per role)._
+_Last updated: step 7 of 7 (README). All planned steps are done._
 
 ---
 
@@ -31,6 +31,7 @@ _Last updated: step 6 of 7 (Overview page per role)._
 - **Dashboard layout** (`src/app/dashboard/layout.tsx`): every page under `/dashboard` gets an M3 navigation rail. Its items come from one config array (`src/config/navigation.ts`), filtered by the user's role on the server (details in `ux.md`).
 - **Overview** (`/dashboard`): shows `TeacherOverview` or `StudentOverview` depending on the user's role. Both are placeholder cards for now (see ux.md). There is no page at `/`; the proxy always redirects it.
 - **Error page** (`src/app/error.tsx`): any page that fails to load (e.g. a missing profile) shows "Something went wrong" with **Try again** and **Log out**, so users are never stuck.
+- **`README.md`**: setup for new developers. It covers install, `.env`, creating the Supabase project, running the SQL, auth settings, running locally, scripts, structure, common tasks and troubleshooting.
 - `npm run build`, `npm run lint` and `npx tsc --noEmit` all pass.
 - The SQL was tested in PGlite (Postgres 17 in WebAssembly) with a stand-in for Supabase's `auth` schema and API roles. Coverage: re-running the script, backfill, the trigger with valid/invalid/missing roles, RLS (own-row read; update/insert/delete denied; `anon` denied) and cascade delete. It has **not yet been run in a real Supabase project**.
 - Tested in Chrome against a local mock of Supabase Auth, in both `next start` and `next dev`. The dev console is clean apart from Lit's expected dev-mode notice. Coverage:
@@ -44,11 +45,10 @@ _Last updated: step 6 of 7 (Overview page per role)._
   - adding a teacher-only page via the config (in a throwaway copy)
   - the Overview content for each role, on desktop and phone widths
   
-  **Not yet tested against a real Supabase project**, because `.env` still has placeholders.
+  **With a real Supabase project** (the project owner's, November 2026), sign-in worked. Before the SQL migration had been run, the dashboard failed with "Could not find the table 'public.profiles'", as expected. After it was run, the dev log showed no further errors. Not every flow above has been repeated against the real project.
 
 **Not built yet**
 
-- README with setup instructions (step 7).
 - Real content: the Overview cards are placeholders, and there are no data tables besides `profiles`.
 - No password-reset page (out of scope).
 
@@ -60,6 +60,7 @@ _Last updated: step 6 of 7 (Overview page per role)._
 
 ```
 .
+├── README.md                 # Setup instructions for new developers
 ├── AGENTS.md                 # Agent instructions (top block is managed by `next dev`)
 ├── features/                 # Project docs: logic.md, ux.md, leaderboard.md
 ├── supabase/
@@ -346,7 +347,7 @@ window.location.assign('/login')  → full page load → proxy sees no session �
 
 ### Supabase project setup
 
-Needed to try the app with a real project. Step 7's README repeats this for new developers.
+Needed to run the app with a real project. The root `README.md` has the same steps written for new developers, plus a troubleshooting table. **If you change the setup (env vars, SQL, Supabase settings), update both.**
 
 1. Create a project at https://supabase.com/dashboard (free tier is fine).
 2. **Project Settings → API**: copy the Project URL into `NEXT_PUBLIC_SUPABASE_URL` and the anon (or publishable) key into `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env`. Restart `npm run dev`.
@@ -391,7 +392,7 @@ Planned build order. Each step is reviewed and committed separately.
 - [x] **4. Roles**: `profiles` table + `user_role` enum, sign-up trigger, backfill, RLS (read own, never change role), role in `getCurrentUser()`, error page
 - [x] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with an M3 navigation rail built from `NAV_ITEMS` (filtered by role on the server), Log out in the rail
 - [x] **6. Overview page**: different placeholder content for teachers and students (`OVERVIEW_BY_ROLE` in `src/app/dashboard/page.tsx`)
-- [ ] **7. README**: install, env vars, Supabase settings, SQL, run locally
+- [x] **7. README**: install, env vars, Supabase project + SQL + auth settings, run locally, scripts, structure, common tasks, troubleshooting
 
 Left unfinished on purpose:
 

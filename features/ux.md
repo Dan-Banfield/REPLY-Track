@@ -330,5 +330,6 @@ The rail is filtered by role, but its only entry (Overview) is for both roles. T
 - **Some Material Web props are typed loosely by the library itself.** For example, `type` on buttons is `string`, so `type="nope"` is not caught by TypeScript.
 - **`md-*-button href="…"` renders a plain link** inside its shadow DOM, so navigation is a full page load, not a Next.js client-side transition. That's fine for the auth pages. For in-app navigation use Next's `<Link>` (as the rail does) or `router.push`.
 - **Error boundaries (`error.tsx`) must not import a CSS file.** Next preloads an error boundary's CSS on every page, and since the error page is normally not shown, the browser logs "…was preloaded using link preload but not used". `src/app/error.tsx` therefore uses inline styles (still token-based). Do the same for any future `error.tsx`.
+- **`.next/dev/logs/next-development.log` is full of `true "unexpected parse state B"` ASSERT lines.** These are *passing* `console.assert` calls in Lit's development build, which Next copies into its dev log file. They don't appear in the browser console or terminal and can be ignored.
 - **"Lit is in dev mode" console message** appears only with `npm run dev`. It is expected and does not appear in production builds.
 - **Dark mode follows the OS.** There is no in-app toggle (out of scope).
