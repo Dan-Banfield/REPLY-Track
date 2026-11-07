@@ -59,10 +59,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 ### 4. Create the database tables
 
-The app reads each user's role from a `profiles` table, which you create once by running the SQL in [`supabase/migrations/`](supabase/migrations/):
+The app reads each user's role from a `profiles` table, which you create once by running the SQL in [`features/logic/migrations/`](features/logic/migrations/):
 
 1. Supabase → **SQL Editor → New query**
-2. Paste the **whole** contents of [`supabase/migrations/20261107000000_create_profiles.sql`](supabase/migrations/20261107000000_create_profiles.sql)
+2. Paste the **whole** contents of [`features/logic/migrations/20261107000000_create_profiles.sql`](features/logic/migrations/20261107000000_create_profiles.sql)
 3. Click **Run**. You should see *"Success. No rows returned"*.
 4. Check **Table Editor** (schema `public`): a `profiles` table should now exist.
 
@@ -81,7 +81,7 @@ Under Supabase → **Authentication**:
 
 - **Sign In / Providers → Email** must be enabled (it is by default).
 - **Confirm email** (same screen) is on by default: new users must click a link in an email before they can sign in. The free tier's built-in email sender only allows a few emails per hour, so **turn it off while developing**. For production, keep it on and set up custom SMTP.
-- **Minimum password length** defaults to 6, which matches the sign-up form. If you change it, also update `minLength` in `src/app/(auth)/signup/SignupForm.tsx`.
+- **Minimum password length** defaults to 6, which matches the sign-up form. If you change it, also update `minLength` in `features/ux/auth/SignupForm.tsx`.
 - **URL Configuration → Site URL** is where confirmation emails send people. Keep `http://localhost:3000` for local development; set your real URL when you deploy.
 
 ### 6. Run locally
@@ -107,29 +107,41 @@ Open http://localhost:3000. You'll be redirected to `/login`.
 
 ## Project structure
 
+The code is organised in **feature folders**: each doc in `features/` sits in its own folder together with the code it describes.
+
 ```
-src/
-├── proxy.ts                 # Route protection + Supabase session refresh
-├── app/
-│   ├── (auth)/              # /login and /signup
-│   ├── dashboard/           # Dashboard layout (navigation rail) and the Overview page
-│   ├── error.tsx            # Error page with "Try again" and "Log out"
-│   └── layout.tsx           # Root layout: fonts, theme, Material Web
-├── config/navigation.ts     # The navigation items (one entry per page)
-├── components/              # Shared UI: navigation rail, Material Web setup, forms
-├── lib/
-│   ├── auth/                # Server Actions, roles, routes, getCurrentUser()
-│   └── supabase/            # Supabase clients (server and browser)
-└── theme/theme.css          # Material 3 colour and type tokens (light + dark)
-supabase/migrations/         # SQL to run in the Supabase SQL Editor
-features/                    # Detailed project docs (see below)
+features/
+├── logic/                   # How it works: auth, roles, Supabase, SQL
+│   ├── logic.md             # Docs for this folder
+│   ├── auth/                # Server Actions, proxy (route protection), roles, routes, getCurrentUser()
+│   ├── supabase/            # Supabase clients (server and browser)
+│   └── migrations/          # SQL to run in the Supabase SQL Editor
+├── ux/                      # What users see: theme, components, screens
+│   ├── ux.md                # Docs for this folder
+│   ├── theme/               # Material 3 colour and type tokens (light + dark), global CSS
+│   ├── material/            # Material Web setup, form components, icon font
+│   ├── navigation/          # navigation.ts (one entry per page) + the navigation rail
+│   ├── root/                # Root layout and error page
+│   ├── auth/                # Login and sign-up pages, log-out button
+│   └── dashboard/           # Dashboard layout and the Overview page (per role)
+└── leaderboard/             # Planned feature (docs only so far)
+src/                         # Next.js entry points only: one-line re-exports from features/
+├── proxy.ts                 # → features/logic/auth/proxy.ts (+ which URLs it runs on)
+└── app/                     # Routes: layout, error, (auth)/login, (auth)/signup, dashboard
 ```
+
+Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, so those files stay there as one-line re-exports, e.g. `export { default, metadata } from '@features/ux/auth/LoginPage';`. Import feature code with the `@features/...` alias.
 
 ## Common tasks
 
-- **Add a dashboard page:** create `src/app/dashboard/<name>/page.tsx` and add one entry to `NAV_ITEMS` in [`src/config/navigation.ts`](src/config/navigation.ts) with its label, URL, [Material Symbols](https://fonts.google.com/icons) icon and the roles that can see it. If the page is for some roles only, also check the role in the page; see [`features/logic.md`](features/logic.md#role-restricted-pages).
+- **Add a dashboard page:**
+  1. Put the page component in a feature folder (e.g. `features/<feature>/MyPage.tsx`).
+  2. Add a one-line route entry `src/app/dashboard/<name>/page.tsx` that re-exports it.
+  3. Add one entry to `NAV_ITEMS` in [`features/ux/navigation/navigation.ts`](features/ux/navigation/navigation.ts) with its label, URL, [Material Symbols](https://fonts.google.com/icons) icon and the roles that can see it.
+  
+  Full walkthrough in [`features/ux/ux.md`](features/ux/ux.md#navigation-config-featuresuxnavigationnavigationts). If the page is for some roles only, also check the role in the page; see [`features/logic/logic.md`](features/logic/logic.md#role-restricted-pages).
 - **Change someone's role:** Supabase → **Table Editor → `profiles`**, then edit the `role` column. It takes effect on their next page load.
-- **Change the brand colour:** see "Theme" in [`features/ux.md`](features/ux.md#theme-design-tokens).
+- **Change the brand colour:** see "Theme" in [`features/ux/ux.md`](features/ux/ux.md#theme-design-tokens).
 
 ## Troubleshooting
 
@@ -141,14 +153,15 @@ features/                    # Detailed project docs (see below)
 | *"Too many sign-up emails were sent recently."* | The free tier's email limit was hit. Turn off **Confirm email** while developing (step 5). |
 | *"Sign-in failed. Please try again."* and the terminal shows `fetch failed` | `.env` still has placeholder or wrong values. Fix them and restart `npm run dev`. |
 | Every page errors with *"Your project's URL and Key (or API key) are required to create a Supabase client"* | `.env` is missing or a variable name is misspelled. Fix it and restart `npm run dev`. |
-| Icons show as words (e.g. "dashboard") | The icon font couldn't load (offline?), or a new icon wasn't added to the list; see "Icons" in [`features/ux.md`](features/ux.md#icons-material-symbols). |
+| Icons show as words (e.g. "dashboard") | The icon font couldn't load (offline?), or a new icon wasn't added to the list; see "Icons" in [`features/ux/ux.md`](features/ux/ux.md#icons-material-symbols). |
 | *"Another next dev server is already running"* | Only one dev server can run per project folder. Use the existing one, or stop it first. |
 
 ## Documentation
 
-Detailed, up-to-date docs for developers (and AI coding agents) live in [`features/`](features/):
+Detailed, up-to-date docs for developers (and AI coding agents) sit next to the code they describe in [`features/`](features/):
 
-- [`features/logic.md`](features/logic.md): auth flow, route protection, roles and SQL, Supabase setup, key files, gotchas
-- [`features/ux.md`](features/ux.md): Material 3 theme and components, layout, navigation config, what each role sees
+- [`features/logic/logic.md`](features/logic/logic.md): auth flow, route protection, roles and SQL, Supabase setup, folder structure and conventions, gotchas
+- [`features/ux/ux.md`](features/ux/ux.md): Material 3 theme and components, layout, navigation config, what each role sees
+- [`features/leaderboard/leaderboard.md`](features/leaderboard/leaderboard.md): planned feature (empty for now)
 
 [`AGENTS.md`](AGENTS.md) has notes for AI coding agents, including that this project uses Next.js 16 conventions (e.g. `proxy.ts` instead of `middleware.ts`).

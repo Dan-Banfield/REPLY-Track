@@ -8,6 +8,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-## Project docs
+## Project docs and structure
 
-Before changing anything, read `features/logic.md` (auth, routing, roles, Supabase, key files) and `features/ux.md` (Material 3 theme, components, layout, navigation). Keep both up to date with every change.
+Before changing anything, read `features/logic/logic.md` (auth, routing, roles, Supabase, key files) and `features/ux/ux.md` (Material 3 theme, components, layout, navigation). Keep both up to date with every change.
+
+Code is organised in feature folders: each doc in `features/` sits in its own folder (`features/logic/`, `features/ux/`, `features/leaderboard/`) together with the code it describes. `src/app/` and `src/proxy.ts` contain only one-line re-exports, because Next.js requires those files to be there. Import feature code with the `@features/*` alias. See "Folder structure" in `features/logic/logic.md`.

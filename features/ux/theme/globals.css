@@ -1,0 +1,34 @@
+/*
+ * Global base styles. Colours and type come from the M3 tokens in
+ * theme.css (same folder); keep this file small and token-based.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-ref-typeface-plain);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * Material Web components are custom elements that are defined in the browser
+ * (see features/ux/material/MaterialWeb.tsx). Until they are defined they
+ * would flash as unstyled text, so hide them briefly. `:not(:defined)` only
+ * matches custom elements, never regular HTML elements.
+ */
+:not(:defined) {
+  visibility: hidden;
+}
