@@ -1,0 +1,31 @@
+.intro {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Cards wrap into as many columns as fit (one column on phones). */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+/* M3 filled card: surface-container-highest, medium corners. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+}
+
+.card h2,
+.card p {
+  margin: 0;
+}
+
+.card p {
+  color: var(--md-sys-color-on-surface-variant);
+}
