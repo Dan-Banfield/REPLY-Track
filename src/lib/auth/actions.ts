@@ -36,9 +36,9 @@ export async function login(_prevState: FormState, formData: FormData): Promise<
  * Creates an account with the chosen role, then sends the user to /login.
  *
  * The role is stored in the new user's metadata (`raw_user_meta_data.role`);
- * a database trigger copies it into the `profiles` table (step 4). The app
- * must read roles from `profiles`, never from user metadata, because users
- * can edit their own metadata.
+ * the `on_auth_user_created` database trigger copies it into the `profiles`
+ * table (supabase/migrations/). The app reads roles from `profiles` only
+ * (getCurrentUser), never from user metadata, which users can edit.
  */
 export async function signup(_prevState: FormState, formData: FormData): Promise<FormState> {
   const email = String(formData.get('email') ?? '').trim();

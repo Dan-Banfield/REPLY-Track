@@ -2,7 +2,7 @@
 
 The Material 3 theme, the components used, the layout, how navigation works and what each role sees. Read it together with [`logic.md`](./logic.md), which covers the app logic.
 
-_Last updated: step 3 of 7 (route protection and logout)._
+_Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
 
 ---
 
@@ -14,7 +14,8 @@ _Last updated: step 3 of 7 (route protection and logout)._
 - Roboto font and the official M3 **type scale** classes.
 - Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`.
 - **Login page** (`/login`) and **sign-up page** (`/signup`), sharing one M3 outlined-card layout. Each links to the other.
-- **Dashboard placeholder** (`/dashboard`): "Dashboard" heading, "Signed in as …" and an M3 outlined **Log out** button. Steps 5–6 replace it.
+- **Dashboard placeholder** (`/dashboard`): "Dashboard" heading, "Signed in as … (Teacher)" or "(Student)", and an M3 outlined **Log out** button. Steps 5–6 replace it.
+- **Error page** for every route: "Something went wrong" with **Try again** (filled) and **Log out** (outlined).
 - Users never see a page at `/`. They are redirected to `/login` or `/dashboard`.
 - Reusable form building blocks: `MaterialForm`, `SubmitButton`, `FormError` (`src/components/material/MaterialForm.tsx`).
 - Page titles use the template `<Page> · REPLY Track` (e.g. "Sign in · REPLY Track", "Dashboard · REPLY Track").
@@ -170,13 +171,26 @@ Material Web fields and radios are form-associated, so `new FormData(form)` pick
 ### Dashboard placeholder (`/dashboard`)
 
 ```
-Dashboard                      ← headline-medium
-Signed in as you@example.com   ← body-large, streams in ("Loading…" first)
-( Log out )                    ← md-outlined-button (LogoutButton)
+Dashboard                                ← headline-medium
+Signed in as you@example.com (Teacher)   ← body-large, streams in ("Loading…" first)
+( Log out )                              ← md-outlined-button (LogoutButton)
 ```
 
 - A simple centred column (max 640px). It exists only so login, route protection and logout can be checked. Step 5 wraps `/dashboard` in the real layout and moves the logout button into the navigation; step 6 replaces the content with the Overview page.
 - **Log out** shows "Logging out…" (disabled) while it works, then does a full page load to `/login`, which comes up empty.
+- The role label comes from `ROLE_LABELS` in `src/lib/auth/roles.ts`.
+
+### Error page (`src/app/error.tsx`)
+
+```
+Something went wrong                                                     ← headline-medium
+This page couldn't be loaded. Try again, or log out and sign in again.   ← body-large, on-surface-variant
+( Try again )  ( Log out )                         ← md-filled-button + md-outlined-button
+```
+
+- Shown in place of any page below the root layout that throws while loading. That includes the dashboard and its future layout, e.g. when a user has no profile row because the SQL wasn't run.
+- **Try again** re-fetches and re-renders the page (Next's `retry()`). **Log out** is the same `LogoutButton`, so a signed-in user can always get back to `/login`.
+- Same simple column layout as the dashboard placeholder. It uses inline styles instead of a CSS Module on purpose (see [Gotchas](#gotchas)).
 
 ### Layout
 
@@ -188,14 +202,12 @@ Not built yet. Step 5 adds a single config array (one entry per page, with the r
 
 ### What each role sees
 
-Roles don't change the UI yet (steps 4–6). Today:
-
 | Visitor | Can open | Redirected |
 | --- | --- | --- |
 | Logged out | `/login`, `/signup` | everything else → `/login` |
 | Logged in (teacher or student) | `/dashboard` (placeholder) | `/`, `/login`, `/signup` → `/dashboard` |
 
-The role is chosen at sign-up and stored, but nothing reads it yet.
+The role is chosen at sign-up, stored in `profiles` and read on the server (see logic.md, "Roles"). So far the only visible difference is the label on the dashboard placeholder: "(Teacher)" or "(Student)". Step 5 filters the navigation by role and step 6 shows different Overview content.
 
 ---
 
@@ -203,6 +215,7 @@ The role is chosen at sign-up and stored, but nothing reads it yet.
 
 - [x] **Step 2:** login page and sign-up page (with role choice), using M3 text fields, radios and buttons.
 - [x] **Step 3:** removed the temporary page at `/` (it now redirects), added the dashboard placeholder and the Log out button.
+- [x] **Step 4:** the role is shown on the dashboard placeholder; error page with Try again / Log out.
 - [ ] **Step 5:** dashboard layout with an M3 navigation rail or drawer built from the config array, plus logout. Material Symbols icons will be added then. `next/font` doesn't ship Material Symbols, so it will be a separate font import.
 - [ ] **Step 6:** Overview page with different placeholder content for teachers and students.
 - Possible later additions (not requested): a "confirm password" field on sign-up, and a password-reset flow.
@@ -219,5 +232,6 @@ The role is chosen at sign-up and stored, but nothing reads it yet.
 - **Undefined custom elements are hidden** (`:not(:defined) { visibility: hidden }` in `globals.css`) to avoid a flash of unstyled text before the JS loads. If JavaScript fails to load, Material Web components stay invisible.
 - **Some Material Web props are typed loosely by the library itself.** For example, `type` on buttons is `string`, so `type="nope"` is not caught by TypeScript.
 - **`md-*-button href="…"` renders a plain link** inside its shadow DOM, so navigation is a full page load, not a Next.js client-side transition. That's fine for the auth pages. For app navigation (step 5), use Next's `<Link>` or `router.push`.
+- **Error boundaries (`error.tsx`) must not import a CSS file.** Next preloads an error boundary's CSS on every page, and since the error page is normally not shown, the browser logs "…was preloaded using link preload but not used". `src/app/error.tsx` therefore uses inline styles (still token-based). Do the same for any future `error.tsx`.
 - **"Lit is in dev mode" console message** appears only with `npm run dev`. It is expected and does not appear in production builds.
 - **Dark mode follows the OS.** There is no in-app toggle (out of scope).

@@ -2,7 +2,7 @@
 
 How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](./ux.md), which covers the UI and design.
 
-_Last updated: step 3 of 7 (route protection and logout)._
+_Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
 
 ---
 
@@ -20,22 +20,32 @@ _Last updated: step 3 of 7 (route protection and logout)._
   - logged-out users can only open `/login` and `/signup`; everything else redirects to `/login`
   - logged-in users opening `/`, `/login` or `/signup` are redirected to `/dashboard`
   - the proxy also refreshes expired sessions
-- **Server-side verification**: `getCurrentUser()` (`src/lib/auth/session.ts`) re-checks the session on the server and redirects to `/login` if it is missing.
+- **Server-side verification**: `getCurrentUser()` (`src/lib/auth/session.ts`) re-checks the session on the server and returns `{ id, email, role }`. It redirects to `/login` if the session is missing.
+- **Roles** (step 4), set up by the SQL in `supabase/migrations/20261107000000_create_profiles.sql`:
+  - a `public.profiles` table (one row per user) with a `role` column of enum type `public.user_role` (`teacher` | `student`)
+  - a trigger that fills it from the sign-up choice, plus a backfill for existing users
+  - RLS: users can read only their own profile and can never change it
+  
+  The app reads the role from `profiles` in `getCurrentUser()`.
 - **Logout**: a Server Action ends the session, then a full page load goes to `/login`.
-- `/dashboard` is a **placeholder** page ("Signed in as …" and a "Log out" button). Steps 5–6 replace it with the real layout and Overview page. There is no page at `/`; the proxy always redirects it.
+- `/dashboard` is a **placeholder** page ("Signed in as … (Teacher/Student)" and a "Log out" button). Steps 5–6 replace it with the real layout and Overview page. There is no page at `/`; the proxy always redirects it.
+- **Error page** (`src/app/error.tsx`): any page that fails to load (e.g. a missing profile) shows "Something went wrong" with **Try again** and **Log out**, so users are never stuck.
 - `npm run build`, `npm run lint` and `npx tsc --noEmit` all pass.
+- The SQL was tested in PGlite (Postgres 17 in WebAssembly) with a stand-in for Supabase's `auth` schema and API roles. Coverage: re-running the script, backfill, the trigger with valid/invalid/missing roles, RLS (own-row read; update/insert/delete denied; `anon` denied) and cascade delete. It has **not yet been run in a real Supabase project**.
 - Tested in Chrome against a local mock of Supabase Auth, in both `next start` and `next dev`. The dev console is clean apart from Lit's expected dev-mode notice. Coverage:
   - logged-out and logged-in redirects for every route
   - login, logout (cookies cleared, fresh login form, dashboard locked again)
   - expired-token refresh in both proxy branches
   - all sign-up and login form paths
+  - the role shown for a teacher and a student
+  - the error page for a user without a profile
   
   **Not yet tested against a real Supabase project**, because `.env` still has placeholders.
 
 **Not built yet**
 
-- The `profiles` table and reading roles (step 4), dashboard layout and navigation (step 5), Overview page (step 6), README (step 7).
-- Until step 4, the chosen role lives **only** in each user's metadata.
+- Dashboard layout and navigation (step 5), Overview page (step 6), README (step 7).
+- Nothing in the UI depends on the role yet besides the placeholder text (steps 5–6).
 - No password-reset page (out of scope).
 
 ---
@@ -48,10 +58,14 @@ _Last updated: step 3 of 7 (route protection and logout)._
 .
 ├── AGENTS.md                 # Agent instructions (top block is managed by `next dev`)
 ├── features/                 # Project docs: logic.md, ux.md, leaderboard.md
+├── supabase/
+│   └── migrations/           # SQL to run in the Supabase SQL Editor, in filename order
+│       └── 20261107000000_create_profiles.sql   # profiles table, role enum, RLS, sign-up trigger, backfill
 ├── src/
 │   ├── proxy.ts              # Route protection + session refresh (runs before every request)
 │   ├── app/                  # App Router routes (no page at "/": the proxy redirects it)
 │   │   ├── layout.tsx        # Root layout: font, theme CSS, Material Web registration, title template
+│   │   ├── error.tsx         # Error page for all routes: Try again + Log out
 │   │   ├── globals.css       # Small, token-based global styles
 │   │   ├── (auth)/           # Route group (not in the URL) for the public auth pages
 │   │   │   ├── layout.tsx        # Centred card shared by /login and /signup
@@ -69,9 +83,9 @@ _Last updated: step 3 of 7 (route protection and logout)._
 │   ├── lib/
 │   │   ├── auth/
 │   │   │   ├── actions.ts    # Server Actions: login, signup, logout
-│   │   │   ├── roles.ts      # ROLES, Role type, labels, isRole()
+│   │   │   ├── roles.ts      # ROLES, Role type, labels, isRole() (mirrors the DB enum)
 │   │   │   ├── routes.ts     # LOGIN_PATH, HOME_PATH, PUBLIC_PATHS
-│   │   │   └── session.ts    # getCurrentUser(): verified user for server code
+│   │   │   └── session.ts    # getCurrentUser(): verified user + role for server code
 │   │   └── supabase/
 │   │       ├── server.ts     # createClient() for Server Components / Actions / Route Handlers
 │   │       └── client.ts     # createClient() for Client Components (not used yet)
@@ -87,7 +101,8 @@ Conventions:
 - Import alias `@/*` → `src/*`.
 - Pages and their route-only components live in the route folder. Shared logic lives in `src/lib/`; shared UI lives in `src/components/`.
 - Route paths used in code come from `src/lib/auth/routes.ts`, not string literals.
-- Planned homes for later steps: `supabase/` (SQL), `src/config/` (navigation config), `src/app/dashboard/layout.tsx` (dashboard shell). Update this tree when they are added.
+- Database changes go in a **new** file in `supabase/migrations/` named `<YYYYMMDDHHMMSS>_<what>.sql` (the Supabase CLI convention). Never edit a file that has already been run in a real project. Write migrations so they can be re-run safely (`if not exists`, `drop … if exists`, `on conflict do nothing`).
+- Planned homes for later steps: `src/config/` (navigation config), `src/app/dashboard/layout.tsx` (dashboard shell). Update this tree when they are added.
 
 ### Key files
 
@@ -98,7 +113,9 @@ Conventions:
 | `src/app/layout.tsx` | Root layout. Loads Roboto with `next/font`, imports the theme CSS and M3 type scale, renders `<MaterialWeb />` so the M3 elements are defined in the browser. Sets the title template `%s · REPLY Track`. |
 | `src/lib/supabase/server.ts` | `createClient()` for server code. Reads and writes the session cookies via `next/headers`, and calls `io()` (see [Rendering model](#rendering-model-cache-components-are-on)). Create one per request. |
 | `src/lib/supabase/client.ts` | `createClient()` for browser code. Same cookie session. Not used yet. |
-| `src/lib/auth/session.ts` | `getCurrentUser()`: the verified `{ id, email }` of the logged-in user, or a redirect to `/login`. Cached per request. Step 4 adds the role. |
+| `src/lib/auth/session.ts` | `getCurrentUser()`: the verified `{ id, email, role }` of the logged-in user, or a redirect to `/login`. Reads the role from `profiles`. Cached per request. Throws if the profile is missing. |
+| `supabase/migrations/20261107000000_create_profiles.sql` | Creates the `user_role` enum, the `profiles` table, RLS policy and grants, the `on_auth_user_created` trigger, and backfills existing users. See [Roles](#roles). |
+| `src/app/error.tsx` | Error boundary for every route below the root layout. Shows **Try again** and **Log out**. |
 | `src/lib/auth/actions.ts` | Server Actions `login`, `signup` (both via `useActionState`) and `logout`. |
 | `src/lib/auth/routes.ts` | `LOGIN_PATH` (`/login`), `HOME_PATH` (`/dashboard`), `PUBLIC_PATHS` (`/login`, `/signup`). |
 | `src/lib/auth/roles.ts` | The role list (`teacher`, `student`), `Role` type, display labels and `isRole()` guard. Use it everywhere roles appear. |
@@ -170,6 +187,53 @@ Two layers, following Next's guidance that the proxy alone is not enough:
 
 **Adding pages:** new pages are protected automatically. To add another public page (e.g. a password-reset page), add its path to `PUBLIC_PATHS` in `src/lib/auth/routes.ts`.
 
+### Roles
+
+**Data model** (`supabase/migrations/20261107000000_create_profiles.sql`):
+
+```
+auth.users (managed by Supabase Auth)
+   │ 1:1, on delete cascade
+   ▼
+public.profiles
+   id          uuid  PK, references auth.users(id)
+   role        public.user_role  NOT NULL   -- enum: 'teacher' | 'student'
+   created_at  timestamptz       NOT NULL default now()
+```
+
+**How a role gets there:**
+
+1. `/signup` sends the chosen role as user metadata: `signUp({ …, options: { data: { role } } })` → `auth.users.raw_user_meta_data.role`.
+2. The `on_auth_user_created` trigger (function `public.handle_new_user`, `security definer`) inserts the `profiles` row. If the metadata role is not a valid `user_role` (missing, or something like `"admin"`), it uses **`student`**, the least-privileged role. This also covers users added in the Supabase dashboard without metadata.
+3. When the script first runs, a backfill creates profiles for users who already exist, using the same rule.
+
+**Who can do what (RLS + grants):**
+
+| Who | profiles access |
+| --- | --- |
+| Logged-in user (`authenticated`) | `select` their **own** row only (`auth.uid() = id`). No insert/update/delete: they can't change their role. |
+| Logged-out (`anon`) | nothing |
+| Admin (Table Editor, SQL Editor, `service_role` key) | everything (bypasses RLS) |
+
+**Reading the role in the app:** `getCurrentUser()` in `src/lib/auth/session.ts`:
+
+```
+getClaims()  → verified user id + email
+   └─ select role from profiles where id = <user id>   (runs as the user, so RLS applies)
+        ├─ query error            → throw (shown by src/app/error.tsx)
+        ├─ no row / unknown value → throw "No valid profile found … run supabase/migrations/*.sql"
+        └─ ok                     → { id, email, role }
+```
+
+- Use `const { role } = await getCurrentUser()` in Server Components (inside `<Suspense>`), Server Actions and Route Handlers. Use `ROLE_LABELS[role]` for display.
+- **Never** read the role from `user_metadata` or from the JWT's `user_metadata` claim; users can edit those.
+- There is no client-side copy of the role yet. Step 5 passes it from the server layout to the navigation.
+
+**Common admin tasks:**
+
+- *Change a user's role:* Supabase → Table Editor → `profiles` → edit `role`, or run `update public.profiles set role = 'teacher' where id = '<user uuid>';` The user sees the new role on their next page load.
+- *Add a role (e.g. `admin`):* write a new migration with `alter type public.user_role add value 'admin';`. Then add it to `ROLES` and `ROLE_LABELS` in `src/lib/auth/roles.ts`, and to the navigation config (step 5). The sign-up form lists every entry in `ROLES`, so remove any role users shouldn't pick there.
+
 ### Auth flow: login
 
 ```
@@ -210,7 +274,7 @@ Two layers, following Next's guidance that the proxy alone is not enough:
        └─ "Confirm email" OFF (session returned)    → signOut({ scope: 'local' }) → redirect('/login?signup=done')
 ```
 
-- **Where the role goes:** into the new user's `raw_user_meta_data` as `{ "role": "teacher" | "student" }`. In step 4, a database trigger on `auth.users` copies it into `public.profiles.role` when the user is created, and a one-off backfill covers users who signed up before that.
+- **Where the role goes:** into the new user's `raw_user_meta_data` as `{ "role": "teacher" | "student" }`. The `on_auth_user_created` trigger then copies it into `public.profiles.role` (see [Roles](#roles)).
 - **Why sign out after an auto-confirmed sign-up:** the requirement is that new users land on the login page. If they stayed signed in, the proxy would bounce them from `/login` to `/dashboard`.
 - The `signup` query value only selects one of two fixed messages in the login page (`SIGNUP_NOTICES`), so arbitrary text can't be injected through the URL.
 
@@ -234,11 +298,12 @@ Needed to try the app with a real project. Step 7's README repeats this for new 
 
 1. Create a project at https://supabase.com/dashboard (free tier is fine).
 2. **Project Settings → API**: copy the Project URL into `NEXT_PUBLIC_SUPABASE_URL` and the anon (or publishable) key into `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env`. Restart `npm run dev`.
-3. **Authentication → Sign In / Providers → Email** must be enabled (it is by default). On the same screen:
+3. **SQL Editor → New query**: paste the contents of each file in `supabase/migrations/` (in filename order; currently only `20261107000000_create_profiles.sql`) and click **Run**. "Success. No rows returned" is expected. Check under Table Editor that `profiles` exists.
+4. **Authentication → Sign In / Providers → Email** must be enabled (it is by default). On the same screen:
    - **Confirm email** (on by default): new users must click a link in an email before they can sign in. The built-in email service on the free tier only sends a few emails per hour. For local development it is easiest to turn this **off**; for production, keep it on and add custom SMTP.
    - **Minimum password length** (default 6): keep `minLength` in `SignupForm.tsx` in sync.
-4. **Authentication → URL Configuration → Site URL**: the confirmation link sends users here (default `http://localhost:3000`). Set it to the real app URL when deploying. Arriving at `/` logged out simply redirects to `/login`.
-5. Visit `/signup`, create an account, sign in on `/login` and you land on `/dashboard`. Users can also be created in **Authentication → Users → Add user** (tick **Auto Confirm User**), but those users have no role in their metadata. Set it under the user's raw metadata, or in `profiles` once step 4 exists.
+5. **Authentication → URL Configuration → Site URL**: the confirmation link sends users here (default `http://localhost:3000`). Set it to the real app URL when deploying. Arriving at `/` logged out simply redirects to `/login`.
+6. Visit `/signup`, create an account, sign in on `/login` and you land on `/dashboard`, which shows your role. Users can also be created in **Authentication → Users → Add user** (tick **Auto Confirm User**). They get the `student` role; change it in Table Editor → `profiles`.
 
 ### Environment variables
 
@@ -271,20 +336,17 @@ Planned build order. Each step is reviewed and committed separately.
 - [x] **1. Project setup**: Next.js, Material 3 theme, env files
 - [x] **2. Supabase**: browser and server clients, login page (email/password), sign-up page with role choice
 - [x] **3. Route protection**: proxy with session refresh and redirects, server-side `getCurrentUser()`, logout
-- [ ] **4. Roles**: SQL for the `profiles` table (`role` = `teacher` | `student`, checked by a constraint). It must also include:
-  - a trigger that creates the profile from `raw_user_meta_data->>'role'` on sign-up
-  - a backfill for existing users
-  - RLS so users can read their own profile but **not change their role**
-  - adding `role` to `getCurrentUser()` (read from `profiles`, never from metadata)
-- [ ] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with navigation built from a config array (role-aware) and the logout button (move `LogoutButton` there)
+- [x] **4. Roles**: `profiles` table + `user_role` enum, sign-up trigger, backfill, RLS (read own, never change role), role in `getCurrentUser()`, error page
+- [ ] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with navigation built from a config array (role-aware) and the logout button (move `LogoutButton` there). Read the role with `getCurrentUser()` inside `<Suspense>` in the layout's nav component, not at the layout's top level.
 - [ ] **6. Overview page**: replace the placeholder `src/app/dashboard/page.tsx` with different placeholder content for teachers and students
 - [ ] **7. README**: install, env vars, Supabase settings, SQL, run locally
 
 Left unfinished on purpose:
 
-- `/dashboard` is a bare placeholder (heading, email, logout button).
-- `getCurrentUser()` returns only `id` and `email`.
+- `/dashboard` is a bare placeholder (heading, email + role, logout button).
 - `src/lib/supabase/client.ts` exists but has no caller yet.
+- Database types are not generated. Query results are validated at runtime (`isRole`). When more tables arrive, consider `npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts` and pass the `Database` type to the clients.
+- Each protected page load makes two Supabase calls for the user (claims + profile). If that becomes a bottleneck, a Supabase *custom access token hook* can put the role into the JWT instead.
 - No "return to the page you wanted after login" (`?next=`). The login always lands on `/dashboard`.
 
 ---
@@ -297,7 +359,11 @@ Left unfinished on purpose:
 - **Proxy cost per request:** `getClaims()` verifies the token locally only when the Supabase project uses the newer asymmetric JWT signing keys. With legacy symmetric keys it calls Supabase Auth on **every** request (proxy + `getCurrentUser()`). If pages feel slow, switch the project to asymmetric keys (Project Settings → JWT Keys).
 - **Don't remove `await io()` from `createClient()`** (see [Rendering model](#rendering-model-cache-components-are-on)).
 - **Logout must stay a full page load** (see [Auth flow: logout](#auth-flow-logout)).
-- **Never read the role from user metadata for authorization.** Users can change their own `user_metadata` with `supabase.auth.updateUser()`. Metadata is only the hand-off from the sign-up form to the database trigger. The `profiles` table (step 4, protected by RLS) is the source of truth.
+- **Never read the role from user metadata for authorization.** Users can change their own `user_metadata` with `supabase.auth.updateUser()`. Metadata is only the hand-off from the sign-up form to the database trigger. The `profiles` table (protected by RLS) is the source of truth.
+- **If you ever let users edit their own profile** (e.g. a display name), don't add a plain `update` policy: it would let them change `role` too. Grant only the safe columns (`grant update (display_name) on public.profiles to authenticated;`) together with an update policy on `auth.uid() = id`.
+- **Missing profile = error page.** If the SQL hasn't been run, or a profile row is deleted, `getCurrentUser()` throws and the user sees the error page (with Log out). The server log names the user id and points to the SQL.
+- **Role values live in two places:** the `public.user_role` enum and `ROLES` in `src/lib/auth/roles.ts`. Change both together, the database via a new migration.
+- **Role changes apply on the next page load**, not instantly in open tabs.
 - **Anyone can sign up as a teacher.** The role is self-selected, as specified. If that ever matters, add an approval step (e.g. a `pending` flag that an admin clears).
 - **"Account already exists" is only reported when email confirmation is off.** With confirmation on, Supabase hides whether an email is registered (to prevent account enumeration). It returns a normal-looking result and sends no email, so the user sees the "check your email" notice.
 - **The free tier's built-in email sender is heavily rate-limited.** Repeated sign-up tests quickly hit `over_email_send_rate_limit`. Turn off "Confirm email" while developing.

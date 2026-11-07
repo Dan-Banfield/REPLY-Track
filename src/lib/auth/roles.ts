@@ -1,6 +1,7 @@
 /**
  * The two user roles. Single source of truth for role names in the app.
- * The database enforces the same values (see features/logic.md, "Roles").
+ * The database has the same values in the `public.user_role` enum
+ * (supabase/migrations/20261107000000_create_profiles.sql); keep them in sync.
  */
 export const ROLES = ['teacher', 'student'] as const;
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 
 import { LogoutButton } from '@/components/auth/LogoutButton';
+import { ROLE_LABELS } from '@/lib/auth/roles';
 import { getCurrentUser } from '@/lib/auth/session';
 
 import styles from './page.module.css';
@@ -29,5 +30,9 @@ export default function DashboardPage() {
 
 async function SignedInAs() {
   const user = await getCurrentUser();
-  return <p className="md-typescale-body-large">Signed in as {user.email}</p>;
+  return (
+    <p className="md-typescale-body-large">
+      Signed in as {user.email} ({ROLE_LABELS[user.role]})
+    </p>
+  );
 }
