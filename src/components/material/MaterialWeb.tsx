@@ -9,8 +9,17 @@
  *
  * This module runs in the browser, which defines the elements before React
  * hydrates. It is rendered once in the root layout.
+ *
+ * Hydration: some elements add attributes to themselves when they start up,
+ * before React hydrates, which React reports as a mismatch in dev. Give these
+ * the `suppressHydrationWarning` prop wherever they are used:
+ *   - md-outlined-text-field (adds inputmode="")
+ *   - md-radio               (adds tabindex)
+ * When registering a new component, check the dev console for
+ * "A tree hydrated but some attributes ... didn't match" and extend this list.
  */
 import '@material/web/button/filled-button.js';
+import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/radio/radio.js';
 import '@material/web/textfield/outlined-text-field.js';

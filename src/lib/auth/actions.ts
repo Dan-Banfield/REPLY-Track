@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
 import { isRole } from './roles';
+import { HOME_PATH, LOGIN_PATH } from './routes';
 
 /** State returned to forms that call these actions through useActionState. */
 export type FormState = {
@@ -28,8 +29,7 @@ export async function login(_prevState: FormState, formData: FormData): Promise<
     return { error: loginErrorMessage(error) };
   }
 
-  // TODO(step 3): redirect to the dashboard once it exists.
-  redirect('/');
+  redirect(HOME_PATH);
 }
 
 /**
@@ -68,9 +68,23 @@ export async function signup(_prevState: FormState, formData: FormData): Promise
     // "Confirm email" is off in Supabase, so signUp also signed the user in.
     // Sign out again so every new user lands on the login page.
     await supabase.auth.signOut({ scope: 'local' });
-    redirect('/login?signup=done');
+    redirect(`${LOGIN_PATH}?signup=done`);
   }
-  redirect('/login?signup=confirm');
+  redirect(`${LOGIN_PATH}?signup=confirm`);
+}
+
+/**
+ * Ends the session on this device (other devices stay signed in) and clears
+ * the auth cookies. It doesn't redirect: the caller does a full page load to
+ * /login so no client state survives (see components/auth/LogoutButton.tsx).
+ */
+export async function logout(): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) {
+    // The cookies are cleared either way; log so a revocation failure isn't silent.
+    console.error('Supabase sign-out failed:', error);
+  }
 }
 
 function loginErrorMessage(error: AuthError): string {

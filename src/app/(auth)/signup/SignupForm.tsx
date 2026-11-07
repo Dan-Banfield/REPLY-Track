@@ -15,12 +15,14 @@ export function SignupForm() {
 
   return (
     <MaterialForm action={formAction}>
+      {/* suppressHydrationWarning: these elements add their own attributes on startup (see MaterialWeb.tsx). */}
       <md-outlined-text-field
         label="Email"
         name="email"
         type="email"
         autocomplete="email"
         required
+        suppressHydrationWarning
       />
       {/* Keep minLength in line with Supabase → Authentication → Password settings (default 6). */}
       <md-outlined-text-field
@@ -31,13 +33,20 @@ export function SignupForm() {
         supporting-text="At least 6 characters"
         minLength={6}
         required
+        suppressHydrationWarning
       />
 
       <fieldset className={styles.roleGroup}>
         <legend className="md-typescale-body-medium">I am a…</legend>
         {ROLES.map((role) => (
           <div key={role} className={styles.roleOption}>
-            <md-radio id={`role-${role}`} name="role" value={role} required />
+            <md-radio
+              id={`role-${role}`}
+              name="role"
+              value={role}
+              required
+              suppressHydrationWarning
+            />
             <label htmlFor={`role-${role}`} className="md-typescale-body-large">
               {ROLE_LABELS[role]}
             </label>

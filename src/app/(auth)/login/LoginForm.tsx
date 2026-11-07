@@ -12,12 +12,14 @@ export function LoginForm() {
 
   return (
     <MaterialForm action={formAction}>
+      {/* suppressHydrationWarning: these elements add their own attributes on startup (see MaterialWeb.tsx). */}
       <md-outlined-text-field
         label="Email"
         name="email"
         type="email"
         autocomplete="email"
         required
+        suppressHydrationWarning
       />
       <md-outlined-text-field
         label="Password"
@@ -25,6 +27,7 @@ export function LoginForm() {
         type="password"
         autocomplete="current-password"
         required
+        suppressHydrationWarning
       />
       <FormError message={state.error} />
       <SubmitButton pending={pending} pendingLabel="Signing in…">

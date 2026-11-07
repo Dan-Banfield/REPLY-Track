@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { io } from 'next/cache';
 import { cookies } from 'next/headers';
 
 /**
@@ -13,6 +14,10 @@ import { cookies } from 'next/headers';
  */
 export async function createClient() {
   const cookieStore = await cookies();
+  // Supabase checks token expiry against the current time (Date.now()). Tell
+  // Next that time-dependent work follows, so it is never baked into a
+  // prerendered or prefetched shell. Resolves immediately during a request.
+  await io();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

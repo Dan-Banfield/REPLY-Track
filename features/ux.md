@@ -2,7 +2,7 @@
 
 The Material 3 theme, the components used, the layout, how navigation works and what each role sees. Read it together with [`logic.md`](./logic.md), which covers the app logic.
 
-_Last updated: step 2 of 7 (Supabase clients, login and sign-up)._
+_Last updated: step 3 of 7 (route protection and logout)._
 
 ---
 
@@ -12,11 +12,13 @@ _Last updated: step 2 of 7 (Supabase clients, login and sign-up)._
 
 - Material Design 3 theme with **light and dark** colour schemes (dark follows the OS setting).
 - Roboto font and the official M3 **type scale** classes.
-- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`.
+- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`.
 - **Login page** (`/login`) and **sign-up page** (`/signup`), sharing one M3 outlined-card layout. Each links to the other.
+- **Dashboard placeholder** (`/dashboard`): "Dashboard" heading, "Signed in as …" and an M3 outlined **Log out** button. Steps 5–6 replace it.
+- Users never see a page at `/`. They are redirected to `/login` or `/dashboard`.
 - Reusable form building blocks: `MaterialForm`, `SubmitButton`, `FormError` (`src/components/material/MaterialForm.tsx`).
-- `/` is a **temporary** setup page (heading, session status line, "Go to sign in" button). Step 3 replaces it.
-- Page titles use the template `<Page> · REPLY Track` (e.g. "Sign in · REPLY Track", "Sign up · REPLY Track").
+- Page titles use the template `<Page> · REPLY Track` (e.g. "Sign in · REPLY Track", "Dashboard · REPLY Track").
+- No hydration warnings in the dev console (see the [hydration rule](#hydration-rule-for-material-web-elements)).
 
 **Not built yet**
 
@@ -47,6 +49,17 @@ Keep the list to components that are actually used. Remove an import when its la
 - unregistered `md-*` tags are a type error
 
 **How registration works:** `MaterialWeb.tsx` is a client component (`'use client'`) rendered once in the root layout. It renders nothing, but its imports define the custom elements in the browser before React hydrates. On the server the tags are rendered as plain HTML. Lit ships a Node build, so the imports don't crash during server rendering.
+
+#### Hydration rule for Material Web elements
+
+Because the elements start up *before* React hydrates, some of them add attributes to themselves that React never rendered. React then logs "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties" in the dev console. Give these elements the **`suppressHydrationWarning`** prop wherever they are used:
+
+| Element | Attribute it adds itself |
+| --- | --- |
+| `md-outlined-text-field` | `inputmode=""` |
+| `md-radio` | `tabindex` (managed by the radio group for keyboard focus) |
+
+Buttons (`md-filled-button`, `md-outlined-button`, `md-text-button`) don't need it. When you register a new component, load a page that uses it with `npm run dev` and check the console for that message. If it appears, add the element to this table and to the comment in `MaterialWeb.tsx`. The warning only affects that one element's attributes, so it doesn't hide problems elsewhere.
 
 ### Theme (design tokens)
 
@@ -154,6 +167,17 @@ They exist because three things break with a plain `<form action>` and Material 
 
 Material Web fields and radios are form-associated, so `new FormData(form)` picks up their values by `name`, like native inputs.
 
+### Dashboard placeholder (`/dashboard`)
+
+```
+Dashboard                      ← headline-medium
+Signed in as you@example.com   ← body-large, streams in ("Loading…" first)
+( Log out )                    ← md-outlined-button (LogoutButton)
+```
+
+- A simple centred column (max 640px). It exists only so login, route protection and logout can be checked. Step 5 wraps `/dashboard` in the real layout and moves the logout button into the navigation; step 6 replaces the content with the Overview page.
+- **Log out** shows "Logging out…" (disabled) while it works, then does a full page load to `/login`, which comes up empty.
+
 ### Layout
 
 Not built yet. Step 5 adds the dashboard layout and navigation. This section will describe it.
@@ -164,14 +188,21 @@ Not built yet. Step 5 adds a single config array (one entry per page, with the r
 
 ### What each role sees
 
-Not built yet (steps 4–6). Today everyone sees the same auth pages; the role is only chosen at sign-up. `/` is the temporary setup page for everyone.
+Roles don't change the UI yet (steps 4–6). Today:
+
+| Visitor | Can open | Redirected |
+| --- | --- | --- |
+| Logged out | `/login`, `/signup` | everything else → `/login` |
+| Logged in (teacher or student) | `/dashboard` (placeholder) | `/`, `/login`, `/signup` → `/dashboard` |
+
+The role is chosen at sign-up and stored, but nothing reads it yet.
 
 ---
 
 ## Next steps
 
 - [x] **Step 2:** login page and sign-up page (with role choice), using M3 text fields, radios and buttons.
-- [ ] **Step 3:** remove the temporary setup page at `/`. `/`, `/login` and `/signup` then redirect depending on the session. Add a logout control. The full navigation comes in step 5.
+- [x] **Step 3:** removed the temporary page at `/` (it now redirects), added the dashboard placeholder and the Log out button.
 - [ ] **Step 5:** dashboard layout with an M3 navigation rail or drawer built from the config array, plus logout. Material Symbols icons will be added then. `next/font` doesn't ship Material Symbols, so it will be a separate font import.
 - [ ] **Step 6:** Overview page with different placeholder content for teachers and students.
 - Possible later additions (not requested): a "confirm password" field on sign-up, and a password-reset flow.
@@ -181,6 +212,7 @@ Not built yet (steps 4–6). Today everyone sees the same auth pages; the role i
 ## Gotchas
 
 - **Material Web is in maintenance mode upstream** (stable releases, few new components). The navigation drawer/bar exist only under `@material/web/labs/` (unstable API), and there is no navigation rail component at all. The rail/drawer in step 5 may need to be composed from stable parts (list, ripple, focus ring, icon) styled with M3 tokens.
+- **Text fields and radios need `suppressHydrationWarning`** ([hydration rule](#hydration-rule-for-material-web-elements)). Without it, the dev console shows a hydration error on every page with a form.
 - **Build forms with `MaterialForm` / `SubmitButton`** ([see above](#forms-with-material-web-use-the-shared-components)). Plain `type="submit"` on an `md-*-button` or `<form action>` breaks in subtle ways.
 - **Radios have no M3 error styling.** An unselected required radio group is reported with the browser's native validation bubble, not with red M3 text.
 - **Use kebab-case attributes for string config** on Material Web tags, exactly as in the material-web.dev docs (e.g. `supporting-text="…"`). These are rendered into the server HTML, so the first paint is correct. camelCase props (e.g. `supportingText`) are only applied as properties after the browser loads the JS. TypeScript allows any hyphenated attribute without type checking, so double-check spelling. Exception: properties whose attribute is just the lowercased name (e.g. `minLength` → `minlength`) work either way.
