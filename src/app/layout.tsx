@@ -14,7 +14,8 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: 'REPLY Track',
+  // Pages set `title: 'Sign in'` etc. and get "Sign in · REPLY Track".
+  title: { default: 'REPLY Track', template: '%s · REPLY Track' },
   description: 'Dashboard for teachers and students',
 };
 
