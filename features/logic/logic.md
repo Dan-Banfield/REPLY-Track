@@ -1,8 +1,8 @@
 # App logic
 
-How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](../ux/ux.md), which covers the UI and design.
+How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](../ux/ux.md), which covers the UI and design. The hexagon stats backend (XP, ranks, the `student_stats` table and the `/api/stats` routes) has its own doc: [`backend.md`](backend.md).
 
-_Last updated: after step 7. Code reorganised into per-doc feature folders (`features/logic/`, `features/ux/`)._
+_Last updated: after step 8. Hexagon stats stored in Supabase (`student_stats`), served by `/api/stats/*`._
 
 ---
 
@@ -12,12 +12,12 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
 
 - Next.js **16.4.5** (App Router, Turbopack), React **19.3**, TypeScript (strict), ESLint (`eslint-config-next`), npm.
 - Material Web (`@material/web` 2.5) is installed and themed (details in `ux.md`).
-- Environment files: `.env` (git-ignored, placeholder values) and `.env.example` (committed template).
+- Environment files: `.env` (git-ignored, real keys) and `.env.example` (committed template).
 - **Supabase clients** for the server (`features/logic/supabase/server.ts`) and the browser (`features/logic/supabase/client.ts`), using `@supabase/ssr` 0.12 and `@supabase/supabase-js` 2.119.
 - **Login page** (`/login`): email + password via a Server Action, then redirects to `/dashboard`. It links to `/signup` and shows a notice after a sign-up.
 - **Sign-up page** (`/signup`): email, password and a **teacher / student** choice. The role is stored in the user's metadata, then the user is redirected to `/login` with a notice.
 - **Route protection** (`features/logic/auth/proxy.ts`, wired up by `src/proxy.ts`):
-  - logged-out users can only open `/login` and `/signup`; everything else redirects to `/login`
+  - logged-out users can only open `/login` and `/signup`; everything else redirects to `/login` (`/api/*` gets a JSON 401 instead)
   - logged-in users opening `/`, `/login` or `/signup` are redirected to `/dashboard`
   - the proxy also refreshes expired sessions
 - **Server-side verification**: `getCurrentUser()` (`features/logic/auth/session.ts`) re-checks the session on the server and returns `{ id, email, role }`. It redirects to `/login` if the session is missing.
@@ -27,6 +27,10 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
   - RLS: users can read only their own profile and can never change it
   
   The app reads the role from `profiles` in `getCurrentUser()`.
+- **Hexagon stats** (step 8, documented in [`backend.md`](backend.md)), set up by `features/logic/migrations/20261107180000_create_student_stats.sql`:
+  - a `public.student_stats` table, one row per user: the stats as jsonb (source of truth) plus a rendered Markdown copy
+  - RLS: users read their own row; teachers (`public.is_teacher()`) read all rows; only the server writes, with the `service_role` key (`features/logic/supabase/admin.ts`), so students can't edit their XP
+  - code in `features/logic/stats/`; Route Handlers under `/api/stats/*`, with one-line entries in `src/app/api/stats/`
 - **Logout**: a Server Action ends the session, then a full page load goes to `/login`. It's triggered from the navigation rail, or from the error page.
 - **Dashboard layout** (`features/ux/dashboard/DashboardLayout.tsx`): every page under `/dashboard` gets an M3 navigation rail. Its items come from one config array (`features/ux/navigation/navigation.ts`), filtered by the user's role on the server (details in `ux.md`).
 - **Overview** (`/dashboard`): shows `TeacherOverview` or `StudentOverview` depending on the user's role. Both are placeholder cards for now (see ux.md). There is no page at `/`; the proxy always redirects it.
@@ -46,10 +50,12 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
   - the Overview content for each role, on desktop and phone widths
   
   **With a real Supabase project** (the project owner's, November 2026), sign-in worked. Before the SQL migration had been run, the dashboard failed with "Could not find the table 'public.profiles'", as expected. After it was run, the dev log showed no further errors. Not every flow above has been repeated against the real project.
+- The `student_stats` SQL was tested in PGlite the same way. Coverage: re-running the script, `service_role` insert/update, a student reads only their own row, a teacher reads every row, student insert/update/delete denied, `anon` denied (table and `is_teacher()`), cascade delete, and the foreign key rejecting unknown users.
 
 **Not built yet**
 
-- Real content: the Overview cards are placeholders, and there are no data tables besides `profiles`.
+- Real content: the Overview cards are placeholders. The stats API exists (`backend.md`), but no screen uses it yet.
+- The chatbot (it should call `recordQuestion()` server-side; see `backend.md` §5).
 - No password-reset page (out of scope).
 
 ---
@@ -60,7 +66,7 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
 
 The code is organised by **feature folder**. Each doc in `features/` has its own folder, holding the doc **and the code it describes**:
 
-- **`features/logic/`**: behaviour and data. Supabase clients, auth (Server Actions, session, roles, routes, proxy) and the SQL. Documented here.
+- **`features/logic/`**: behaviour and data. Supabase clients, auth (Server Actions, session, roles, routes, proxy), the SQL, and the hexagon stats backend. Documented here and in [`backend.md`](backend.md) (stats).
 - **`features/ux/`**: everything the user sees. Theme, Material Web setup, form components, navigation, and the screens (root layout, error page, auth pages, dashboard, Overview). Documented in [`ux.md`](../ux/ux.md).
 - **`features/leaderboard/`**: a planned feature; only its (empty) doc so far.
 
@@ -73,6 +79,7 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 ├── features/
 │   ├── logic/
 │   │   ├── logic.md              # This document
+│   │   ├── backend.md            # Hexagon stats: game rules, /api/stats, student_stats table
 │   │   ├── auth/
 │   │   │   ├── actions.ts        # Server Actions: login, signup, logout
 │   │   │   ├── proxy.ts          # proxy(): session refresh + redirects (re-exported by src/proxy.ts)
@@ -81,9 +88,18 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 │   │   │   └── session.ts        # getCurrentUser(): verified user + role for server code
 │   │   ├── supabase/
 │   │   │   ├── server.ts         # createClient() for Server Components / Actions / Route Handlers
-│   │   │   └── client.ts         # createClient() for Client Components (not used yet)
+│   │   │   ├── client.ts         # createClient() for Client Components (not used yet)
+│   │   │   └── admin.ts          # createAdminClient(): service_role key, bypasses RLS, server-only
+│   │   ├── stats/                # Hexagon stats backend (see backend.md)
+│   │   │   ├── index.ts          # Public API: recordQuestion, awardXp, getHexagon, getLeaderboard, …
+│   │   │   ├── types.ts          # Shared types (the only stats file Client Components may import)
+│   │   │   ├── config.ts, subjects.ts, classifier.ts, engine.ts, markdown.ts
+│   │   │   ├── store.ts          # student_stats reads/writes (optimistic concurrency)
+│   │   │   ├── service.ts        # High-level operations
+│   │   │   └── api/              # Route Handler implementations + http.ts (auth/error helpers)
 │   │   └── migrations/           # SQL to run in the Supabase SQL Editor, in filename order
-│   │       └── 20261107000000_create_profiles.sql   # profiles table, role enum, RLS, sign-up trigger, backfill
+│   │       ├── 20261107000000_create_profiles.sql        # profiles table, role enum, RLS, sign-up trigger, backfill
+│   │       └── 20261107180000_create_student_stats.sql   # student_stats table, is_teacher(), RLS
 │   ├── ux/
 │   │   ├── ux.md
 │   │   ├── theme/                # theme.css (M3 tokens, light + dark), globals.css
@@ -104,9 +120,10 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 │       │   ├── layout.tsx        # → features/ux/auth/AuthLayout
 │       │   ├── login/page.tsx    # /login  → features/ux/auth/LoginPage
 │       │   └── signup/page.tsx   # /signup → features/ux/auth/SignupPage
-│       └── dashboard/
-│           ├── layout.tsx        # /dashboard/* → features/ux/dashboard/DashboardLayout
-│           └── page.tsx          # /dashboard   → features/ux/dashboard/OverviewPage
+│       ├── dashboard/
+│       │   ├── layout.tsx        # /dashboard/* → features/ux/dashboard/DashboardLayout
+│       │   └── page.tsx          # /dashboard   → features/ux/dashboard/OverviewPage
+│       └── api/stats/**/route.ts # /api/stats/* → features/logic/stats/api/* (see backend.md §4)
 ├── .env.example                  # Committed env template
 ├── .env                          # Your real keys (git-ignored)
 └── next.config.ts
@@ -115,7 +132,7 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 Conventions:
 
 - **Import alias `@features/*` → `features/*`.** Import from another folder with the alias (`@features/logic/auth/session`); use relative imports (`./auth.module.css`) only within the same folder. `@/*` → `src/*` still exists but nothing should import from `src/`.
-- **Route entry files stay one line**, e.g. `export { default, metadata } from '@features/ux/auth/LoginPage';`. Re-export every Next-specific export the page has (`metadata`, `generateMetadata`, …). Two exceptions must live in `src/` itself:
+- **Route entry files stay one line**, e.g. `export { default, metadata } from '@features/ux/auth/LoginPage';` or, for a Route Handler, `export { GET } from '@features/logic/stats/api/me';`. Re-export every Next-specific export the page has (`metadata`, `generateMetadata`, …). Two exceptions must live in `src/` itself:
   - `src/proxy.ts` keeps `export const config` (the matcher). Next reads it without running the code.
   - `src/app/error.tsx` starts with `'use client'`, because error boundaries must be Client Components.
 - **Which folder?** Behaviour, data access, auth and SQL go in `features/logic/`; anything rendered or styled goes in `features/ux/`. A screen (in `ux`) calls into `logic` (actions, `getCurrentUser()`), never the other way round. `features/logic/` must not import from `features/ux/`.
@@ -152,7 +169,11 @@ Conventions:
 | `features/ux/material/MaterialWeb.tsx` | The one place where Material Web components are imported/registered (plus the hydration rule; see ux.md). |
 | `features/ux/material/MaterialForm.tsx` | `MaterialForm`, `SubmitButton`, `FormError`: the form building blocks every form uses (see ux.md). |
 | `features/ux/theme/theme.css` | All `--md-sys-color-*` tokens for light and dark mode, plus typeface tokens. |
-| `.env.example` / `.env` | Supabase URL and anon key (placeholders). |
+| `features/logic/supabase/admin.ts` | `createAdminClient()`: Supabase client with the `service_role` key. Bypasses RLS; `server-only`. Used for stats writes and the leaderboard. |
+| `features/logic/migrations/20261107180000_create_student_stats.sql` | `student_stats` table, `is_teacher()` helper, RLS (own row / teachers read all / only `service_role` writes). See `backend.md` §7. |
+| `features/logic/stats/index.ts` | Public API of the stats backend. See [`backend.md`](backend.md). |
+| `features/logic/stats/api/http.ts` | `handle()` (StatsError → JSON, re-throws Next redirects), `readJson()`, `requireUser()`, `requireTeacher()`, `requireTeacherOrSelf()`. |
+| `.env.example` / `.env` | Supabase URL, anon key, service_role key, OpenAI key (template / real values). |
 
 ### Rendering model: Cache Components are on
 
@@ -198,6 +219,7 @@ Two layers, following Next's guidance that the proxy alone is not enough:
 | --- | --- | --- |
 | `/login`, `/signup` (`PUBLIC_PATHS`) | page renders | 307 → `/dashboard` |
 | `/` | 307 → `/login` | 307 → `/dashboard` |
+| `/api/*` (`API_PREFIX`) | 401 `{ "error": "Not signed in" }` | handler runs |
 | anything else (incl. unknown paths, Server Action POSTs) | 307 → `/login` | page renders (or 404) |
 
 - The redirect drops any query string, e.g. `/login?signup=done` while logged in → `/dashboard`.
@@ -207,7 +229,8 @@ Two layers, following Next's guidance that the proxy alone is not enough:
 
 **2. `getCurrentUser()` (authoritative, in server code)**
 
-- Every protected Server Component calls it (inside `<Suspense>`); future Server Actions and Route Handlers that touch user data must call it too.
+- Every protected Server Component calls it (inside `<Suspense>`); Server Actions and Route Handlers that touch user data must call it too (the `/api/stats` handlers do, via `requireUser()` & co. in `features/logic/stats/api/http.ts`).
+- In a Route Handler wrapped in `try/catch`, call `unstable_rethrow(err)` first in the `catch`, so its `redirect()` isn't turned into a 500 (`handle()` does this).
 - It redirects to `/login` if the session is invalid, so a page is safe even if the proxy matcher changes.
 - Wrapped in React `cache()`, so several components calling it in one request cost one check.
 
@@ -356,8 +379,8 @@ window.location.assign('/login')  → full page load → proxy sees no session �
 Needed to run the app with a real project. The root `README.md` has the same steps written for new developers, plus a troubleshooting table. **If you change the setup (env vars, SQL, Supabase settings), update both.**
 
 1. Create a project at https://supabase.com/dashboard (free tier is fine).
-2. **Project Settings → API**: copy the Project URL into `NEXT_PUBLIC_SUPABASE_URL` and the anon (or publishable) key into `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env`. Restart `npm run dev`.
-3. **SQL Editor → New query**: paste the contents of each file in `features/logic/migrations/` (in filename order; currently only `20261107000000_create_profiles.sql`) and click **Run**. "Success. No rows returned" is expected. Check under Table Editor that `profiles` exists.
+2. **Project Settings → API / API Keys**: copy the Project URL into `NEXT_PUBLIC_SUPABASE_URL`, the anon (or publishable) key into `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and the **secret** (`sb_secret_…`, or legacy `service_role`) key into `SUPABASE_SERVICE_ROLE_KEY` in `.env`. Restart `npm run dev`.
+3. **SQL Editor → New query**: paste the contents of each file in `features/logic/migrations/` and click **Run**, one file at a time in filename order (`20261107000000_create_profiles.sql`, then `20261107180000_create_student_stats.sql`). "Success. No rows returned" is expected. Check under Table Editor that `profiles` and `student_stats` exist.
 4. **Authentication → Sign In / Providers → Email** must be enabled (it is by default). On the same screen:
    - **Confirm email** (on by default): new users must click a link in an email before they can sign in. The built-in email service on the free tier only sends a few emails per hour. For local development it is easiest to turn this **off**; for production, keep it on and add custom SMTP.
    - **Minimum password length** (default 6): keep `minLength` in `SignupForm.tsx` in sync.
@@ -370,10 +393,12 @@ Needed to run the app with a real project. The root `README.md` has the same ste
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public API key: the legacy anon key or the newer publishable key (`sb_publishable_…`). Safe in the browser because Row Level Security protects the data. | Same page |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Secret, server-only.** Bypasses RLS. Used by `createAdminClient()` for stats writes and the leaderboard. Without it, every `/api/stats` call that writes fails. | Project Settings → API Keys → secret key (`sb_secret_…`) or legacy `service_role` |
+| `OPENAI_API_KEY` | **Secret, server-only.** For the chatbot (not used by any code yet). | OpenAI dashboard → API keys |
 
-- `.env` is created with placeholder values. Paste the real values there. The project uses **`.env`** (not `.env.local`) by convention.
+- Paste the real values into `.env` (copy it from `.env.example`). The project uses **`.env`** (not `.env.local`) by convention.
 - `.gitignore` ignores `.env*` but allows `.env.example`.
-- Never add the `service_role` / secret key to a `NEXT_PUBLIC_` variable.
+- Never add the `service_role` / secret key (or any other secret) to a `NEXT_PUBLIC_` variable: those are inlined into browser code.
 - Next.js loads `.env` in every environment (dev, build, start). If someone also creates a `.env.local`, it overrides `.env`, so keep only one.
 - If the variables are missing entirely, creating a Supabase client throws "Your project's URL and Key are required…". Since the proxy creates one on every request, **every page then fails**. If they are placeholders, pages load and sign-in/sign-up show "… failed. Please try again." The server log then shows `AuthRetryableFetchError: fetch failed`.
 
@@ -399,6 +424,7 @@ Planned build order. Each step is reviewed and committed separately.
 - [x] **5. Dashboard layout**: `features/ux/dashboard/DashboardLayout.tsx` with an M3 navigation rail built from `NAV_ITEMS` (filtered by role on the server), Log out in the rail
 - [x] **6. Overview page**: different placeholder content for teachers and students (`OVERVIEW_BY_ROLE` in `features/ux/dashboard/OverviewPage.tsx`)
 - [x] **7. README**: install, env vars, Supabase project + SQL + auth settings, run locally, scripts, structure, common tasks, troubleshooting
+- [x] **8. Hexagon stats in Supabase**: `student_stats` table + RLS, `service_role` admin client, stats library in `features/logic/stats/`, `/api/stats/*` routes, `/api/*` 401 in the proxy (see `backend.md`)
 
 Left unfinished on purpose:
 
@@ -419,6 +445,8 @@ Left unfinished on purpose:
 - **Proxy cost per request:** `getClaims()` verifies the token locally only when the Supabase project uses the newer asymmetric JWT signing keys. With legacy symmetric keys it calls Supabase Auth on **every** request (proxy + `getCurrentUser()`). If pages feel slow, switch the project to asymmetric keys (Project Settings → JWT Keys).
 - **Don't remove `await io()` from `createClient()`** (see [Rendering model](#rendering-model-cache-components-are-on)).
 - **Logout must stay a full page load** (see [Auth flow: logout](#auth-flow-logout)).
+- **`createAdminClient()` bypasses RLS.** Only call it after checking who the caller is and what they may touch. Never import it (or `@features/logic/stats`) into a Client Component; the `server-only` import makes that a build error.
+- **Stats writes go through the server only.** `student_stats` has no insert/update policy on purpose. Don't add one, or students could set their own XP via the public API.
 - **Never read the role from user metadata for authorization.** Users can change their own `user_metadata` with `supabase.auth.updateUser()`. Metadata is only the hand-off from the sign-up form to the database trigger. The `profiles` table (protected by RLS) is the source of truth.
 - **If you ever let users edit their own profile** (e.g. a display name), don't add a plain `update` policy: it would let them change `role` too. Grant only the safe columns (`grant update (display_name) on public.profiles to authenticated;`) together with an update policy on `auth.uid() = id`.
 - **Missing profile = error page.** If the SQL hasn't been run, or a profile row is deleted, `getCurrentUser()` throws and the user sees the error page (with Log out). The server log names the user id and points to the SQL.

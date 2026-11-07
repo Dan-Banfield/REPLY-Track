@@ -1,7 +1,7 @@
 import { createServerClient, type SetAllCookies } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { HOME_PATH, LOGIN_PATH, PUBLIC_PATHS } from './routes';
+import { API_PREFIX, HOME_PATH, LOGIN_PATH, PUBLIC_PATHS } from './routes';
 
 /**
  * Next.js proxy (re-exported by src/proxy.ts, which also holds the matcher).
@@ -11,6 +11,7 @@ import { HOME_PATH, LOGIN_PATH, PUBLIC_PATHS } from './routes';
  *    has expired, writing the new cookies to the browser.
  * 2. Redirects:
  *    - logged out, on any page except PUBLIC_PATHS → /login
+ *      (API_PREFIX routes get a JSON 401 instead, so fetch() callers can tell)
  *    - logged in, on a PUBLIC_PATHS page or "/"    → /dashboard
  *
  * This is an optimistic check for fast redirects. Pages and Server Actions
@@ -49,7 +50,9 @@ export async function proxy(request: NextRequest) {
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
   let response: NextResponse;
-  if (!isLoggedIn && !isPublic) {
+  if (!isLoggedIn && pathname.startsWith(API_PREFIX)) {
+    response = NextResponse.json({ error: 'Not signed in' }, { status: 401 });
+  } else if (!isLoggedIn && !isPublic) {
     response = NextResponse.redirect(new URL(LOGIN_PATH, request.url));
   } else if (isLoggedIn && (isPublic || pathname === '/')) {
     response = NextResponse.redirect(new URL(HOME_PATH, request.url));

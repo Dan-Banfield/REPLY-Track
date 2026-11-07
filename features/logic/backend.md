@@ -1,75 +1,81 @@
-# Logic — Hexagon Stats Backbone
+# Backend — Hexagon Stats
 
-This is the backend that turns **"a user asked the chatbot a question"** into **"their stat on the hexagon went up"**. It is a self-contained Next.js 16 (App Router, TypeScript) project. It has no database: every user's stats live in their own Markdown file.
+This is the backend that turns **"a student asked the chatbot a question"** into **"their stat on the hexagon went up"**. Each user's stats are stored in **Supabase**, in a `student_stats` table with one row per user. A row holds the stats as JSON plus a rendered **Markdown** copy (the student's "stats file").
 
-It does **not** contain the chatbot. The chatbot (or whatever sits in front of it) calls this backend once per user question.
+It does **not** contain the chatbot. The chatbot calls `recordQuestion()` (or the HTTP route) once per student question.
+
+Read this together with [`logic.md`](logic.md), which covers auth, roles, Supabase setup, folder conventions and gotchas.
 
 ---
 
 ## TL;DR for frontend / chatbot agents
 
-```ts
-// After every user question to the chatbot:
-const res = await fetch(`/api/users/${userId}/questions`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({
-    question: "Why does proof by induction work?",
-    subject: "maths",                                              // optional, default "maths"
-    classification: { weights: { discrete: 1 }, depth: "conceptual" } // optional but recommended (see §5)
-  }),
-});
-const award = await res.json();
-// award.gains     -> { discrete: 16 }               show "+16 Discrete" toast
-// award.rankUps   -> [{ stat, from, to, title }]    show a "Rank up!" animation
-// award.hexagon   -> full radar data                re-render the hexagon
-```
+**From the chatbot's server code** (preferred: no HTTP round trip, and the browser can't fake it):
 
 ```ts
-// To draw the hexagon at any time:
-const hex = await fetch(`/api/users/${userId}/hexagon?subject=maths`).then(r => r.json());
-// hex.axes[i].value is 0..1. Plot it on the i-th vertex (clockwise from the top).
+import { getCurrentUser } from '@features/logic/auth/session';
+import { recordQuestion } from '@features/logic/stats';
+
+const user = await getCurrentUser();
+const award = await recordQuestion({
+  userId: user.id,
+  question: 'Why does proof by induction work?',
+  classification: { weights: { discrete: 1 }, depth: 'conceptual' }, // from the LLM, see §5
+  displayName: user.email.split('@')[0],                            // only used on first save
+});
+// award.gains   -> { discrete: 16 }              show "+16 Discrete"
+// award.rankUps -> [{ stat, from, to, title }]   show a "Rank up!" animation
+// award.hexagon -> full radar data               re-render the hexagon
 ```
+
+**From the browser** (the session cookie authenticates the request):
+
+```ts
+const hex = await fetch('/api/stats/me/hexagon?subject=maths').then((r) => r.json());
+// hex.axes[i].value is 0..1. Plot it on the i-th vertex (clockwise from the top).
+
+await fetch('/api/stats/me/questions', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ question: 'How do I find eigenvalues?' }),
+});
+```
+
+Client components may import **types only**, from `@features/logic/stats/types`. Everything else in `features/logic/stats/` is `server-only`.
 
 ---
 
-## 1. Running it
+## 1. Setup
 
-```bash
-cd features/logic
-npm install
-npm run dev          # http://localhost:3000
-npm run build        # type-check + production build
-```
+1. Run the SQL in `features/logic/migrations/` in the Supabase SQL Editor, in filename order. The stats table comes from `20261107180000_create_student_stats.sql`, which needs `profiles` from the earlier file. Both are safe to re-run.
+2. Put the secret key in `.env` as `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Project Settings → API Keys → **secret** key `sb_secret_…`, or the legacy `service_role` key). The server writes stats with it. See `.env.example`.
+3. Restart `npm run dev`.
 
-| Env var | Default | Purpose |
-|---|---|---|
-| `STATS_DATA_DIR` | `./data/users` | Folder where the per-user `.md` files are stored |
-
-To merge this into a shared Next.js app, copy `src/lib/stats/`, `src/lib/http.ts` and `src/app/api/`. The `@/*` path alias must map to `src/*`.
+If the table is missing, every stats call fails with *"Table public.student_stats is missing. Run features/logic/migrations/*.sql…"*.
 
 ## 2. Layout
 
 ```
 features/logic/
-├── logic.md                    ← this file
-├── data/users/<userId>.md      ← one stats file per user (gitignored runtime data)
-└── src/
-    ├── lib/
-    │   ├── http.ts             ← route helpers (error → JSON mapping)
-    │   └── stats/
-    │       ├── index.ts        ← PUBLIC API: import from "@/lib/stats"
-    │       ├── types.ts        ← all shared types (safe to import client-side)
-    │       ├── config.ts       ← balance knobs: XP, ranks, caps
-    │       ├── subjects.ts     ← subject + 6-stat definitions and keywords
-    │       ├── classifier.ts   ← fallback keyword classifier (question → stats + depth)
-    │       ├── engine.ts       ← pure maths: gains, caps, ranks, hexagon view
-    │       ├── store.ts        ← Markdown file read/write, per-user lock
-    │       └── service.ts      ← high-level operations used by routes
-    └── app/api/...             ← HTTP routes (see §4)
+├── backend.md                ← this file
+├── migrations/20261107180000_create_student_stats.sql   ← table, RLS, is_teacher()
+├── supabase/admin.ts         ← createAdminClient(): service_role client (bypasses RLS), server-only
+└── stats/
+    ├── index.ts              ← PUBLIC API: import from "@features/logic/stats"
+    ├── types.ts              ← all shared types (the only file safe to import client-side)
+    ├── config.ts             ← balance knobs: XP, ranks, caps
+    ├── subjects.ts           ← subject + 6-stat definitions and keywords
+    ├── classifier.ts         ← fallback keyword classifier (question → stats + depth)
+    ├── engine.ts             ← pure maths: gains, caps, ranks, hexagon view
+    ├── markdown.ts           ← renders a profile as the Markdown "stats file"
+    ├── store.ts              ← Supabase reads/writes, optimistic concurrency
+    ├── service.ts            ← high-level operations (recordQuestion, awardXp, …)
+    └── api/                  ← Route Handler implementations (+ http.ts: auth & error helpers)
+
+src/app/api/stats/**/route.ts ← one-line re-exports of stats/api/*
 ```
 
-Data flows in one direction: **route → service → (classifier, engine) → store**.
+Data flows in one direction: **route → service → (classifier, engine) → store → Supabase**.
 
 ## 3. How the game logic works
 
@@ -85,14 +91,14 @@ A **subject** has exactly **6 stats**, one per hexagon vertex. The MVP has one s
 | 4 | `probability` | Probability & Stats |
 | 5 | `linear_algebra` | Linear Algebra |
 
-Each stat also comes with a `description` and a suggested `color`. Fetch them from `GET /api/subjects` rather than hardcoding them.
+Each stat also has a `description` and a suggested `color`. Get them from `GET /api/stats/subjects` rather than hardcoding them.
 
 ### From question to XP
 1. **Classify** the question into:
    - `weights`: which stats it touches, e.g. `{ discrete: 0.7, probability: 0.3 }`.
    - `depth`: `recall | clarify | apply | conceptual`.
 
-   If the caller supplies a `classification`, it is used. Otherwise the keyword classifier is the fallback (§5).
+   A `classification` sent by the caller is used if valid. Otherwise the keyword classifier is the fallback (§5).
 2. **Normalise weights**: unknown stats are dropped and the rest are scaled to sum to 1. Any stat under 10% is dropped and the remaining weights are re-normalised.
 3. **XP pool** = `BASE_XP (10) × depth multiplier`:
 
@@ -108,12 +114,11 @@ Each stat also comes with a `description` and a suggested `color`. Fetch them fr
    - Questions shorter than 8 characters earn nothing.
    - A repeat of any of the user's last 50 questions earns nothing. Matching ignores case and punctuation.
    - Each stat can earn at most **60 XP per UTC day** from questions.
-6. **Apply** the XP, recalculate ranks, report rank-ups, and append the question to the activity log.
+6. **Apply** the XP, recalculate ranks, report rank-ups, and add the question to the activity log.
 
-Every reason XP was reduced or blocked comes back in `notes[]`. Show these to the user, e.g. "Daily cap reached for Discrete".
+Every reason XP was reduced or blocked comes back in `notes[]`. Show these to the user.
 
 ### Ranks (the Persona-style part)
-Each stat climbs its own ladder:
 
 | Rank | Title | Total XP needed |
 |---|---|---|
@@ -123,50 +128,48 @@ Each stat climbs its own ladder:
 | 4 | Expert | 160 |
 | 5 | Master | 280 |
 
-A conceptual question aimed at a single stat earns 16 XP, so the first rank-up comes after about 2 questions. Rank 5 takes about 18 questions, or a few days because of the daily cap. All of these numbers live in `config.ts`.
-
-**Overall rank** for a subject is the floor of the average of its 6 stat ranks.
+**Overall rank** for a subject is the floor of the average of its 6 stat ranks. All numbers live in `config.ts`.
 
 ### Hexagon values
-Each axis has two values:
-- `value` (0..1): position along the whole ladder. It is **linear in rank, not XP**, so the shape grows evenly even though later ranks cost more. **Use this for the radar polygon.**
-- `progressToNext` (0..1): progress from the current rank to the next. **Use this for progress bars.**
+- `value` (0..1): position along the whole ladder, **linear in rank, not XP**, so the shape grows evenly. **Use it for the radar polygon.**
+- `progressToNext` (0..1): progress to the next rank. **Use it for progress bars.**
 
-A brand-new user has `value: 0` on every axis. Frontends may want to draw a minimum radius (e.g. `0.05 + 0.95 * value`) so the shape isn't a single point.
+A new user has `value: 0` everywhere. Consider drawing a minimum radius (e.g. `0.05 + 0.95 * value`).
 
 ## 4. HTTP API
 
-All bodies are JSON. Errors are returned as `{ "error": string }` with status 400, 404 or 500.
-A `userId` is 1–64 characters from `[A-Za-z0-9_-]`. There is **no auth yet**: whoever knows a userId can write to it.
+All routes need a logged-in session. The browser sends the Supabase auth cookies automatically.
+- Logged out: the proxy answers **401** `{ "error": "Not signed in" }`.
+- Other errors: `{ "error": string }` with status 400, 403, 404, 409 or 500.
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/subjects` | Subject/stat definitions + rank ladder |
-| POST | `/api/classify` | Dry-run classification (writes nothing) |
-| PUT | `/api/users/:userId` | Create user / set display name (idempotent) |
-| GET | `/api/users/:userId` | Profile + activity + all hexagons (404 if unknown) |
-| GET | `/api/users/:userId/hexagon?subject=maths` | Radar data for one subject (zeros if unknown user) |
-| POST | `/api/users/:userId/questions` | **Record a question → award XP** |
-| POST | `/api/users/:userId/award` | Direct XP award (quizzes, bonuses) |
-| POST | `/api/users/:userId/reset` | Wipe progress in a subject |
-| GET | `/api/leaderboard?subject=maths&stat=discrete&limit=10` | Leaderboard |
+User ids are Supabase auth user ids (UUIDs).
 
-### `POST /api/users/:userId/questions`
-Request:
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| GET | `/api/stats/subjects` | anyone logged in | Subject/stat definitions + rank ladder |
+| POST | `/api/stats/classify` | anyone logged in | Dry-run classification (writes nothing) |
+| GET | `/api/stats/me` | self | All hexagons + recent activity (zeros if no stats yet) |
+| GET | `/api/stats/me/hexagon?subject=maths` | self | Radar data for one subject |
+| POST | `/api/stats/me/questions` | self | **Record a question → award XP** |
+| GET | `/api/stats/students/:userId` | teacher, or self | Full stored profile + `hexagons` (404 if no stats) |
+| POST | `/api/stats/students/:userId/award` | teacher | Direct XP award (quizzes, bonuses) |
+| POST | `/api/stats/students/:userId/reset` | teacher | Wipe progress in a subject |
+| GET | `/api/stats/leaderboard?subject=maths&stat=discrete&limit=10` | anyone logged in | Leaderboard (students only) |
+
+### `POST /api/stats/me/questions`
 ```json
 {
   "question": "How do I count permutations with a recurrence relation?",
   "subject": "maths",
-  "displayName": "Alice",
   "classification": { "weights": { "discrete": 1 }, "depth": "apply" }
 }
 ```
-Only `question` is required. A user who doesn't exist yet is **created automatically**; `displayName` is used only at that point.
+Only `question` is required. The first call creates the user's stats row, with the part of their email before `@` as display name.
 
 Response (`AwardResult`):
 ```json
 {
-  "userId": "alice",
+  "userId": "2b0c…",
   "subject": "maths",
   "classification": {
     "weights": { "discrete": 3 }, "depth": "apply", "source": "keyword",
@@ -176,12 +179,12 @@ Response (`AwardResult`):
   "totalGain": 13,
   "rankUps": [],
   "notes": [],
-  "hexagon": { "...": "see HexagonView below" }
+  "hexagon": { "...": "HexagonView" }
 }
 ```
-`classification.source` is `"provided"` (your weights were used), `"keyword"` (the fallback classifier) or `"none"` (no stat matched, so no XP was given).
+`classification.source` is `"provided"` (your weights were used), `"keyword"` (the fallback) or `"none"` (no stat matched, so no XP).
 
-### `GET /api/users/:userId/hexagon` → `HexagonView`
+### `GET /api/stats/me/hexagon` → `HexagonView`
 ```json
 {
   "subject": "maths", "label": "Mathematics",
@@ -196,30 +199,33 @@ Response (`AwardResult`):
   ]
 }
 ```
-`axes` always has 6 entries in vertex order. `xpForNextRank` is `null` once the stat is at Master.
+`axes` always has 6 entries in vertex order. `xpForNextRank` is `null` at Master.
 
-### `POST /api/users/:userId/award`
+### `GET /api/stats/me`
+```json
+{ "userId": "…", "displayName": "alice", "hexagons": [HexagonView, …], "activity": [ActivityEntry, …] }
+```
+`displayName` is `null` until the user's first recorded question.
+
+### `POST /api/stats/students/:userId/award` (teachers)
 ```json
 { "xp": { "discrete": 20, "algebra": 5 }, "reason": "Completed quiz: Graphs 101", "subject": "maths" }
 ```
-This skips the classifier, duplicate check and daily cap. Each stat is clamped to **50 XP per call**. It returns an `AwardResult` and is meant for quiz or achievement features.
+This skips the classifier, duplicate check and daily cap. Each stat is clamped to **50 XP per call**. Returns an `AwardResult`. The student's stats row is created if needed.
 
-### `POST /api/classify`
-```json
-{ "question": "Why does induction work on graphs?", "subject": "maths" }
-```
-→ `{ "weights": { "discrete": 4 }, "depth": "conceptual", "source": "keyword", "matches": {...} }`
+### `POST /api/stats/students/:userId/reset` (teachers)
+Body `{ "subject": "maths" }` (optional, defaults to maths). Returns the zeroed `HexagonView`, or 404 if the student has no stats.
 
-### `GET /api/leaderboard`
-Ranks users by total subject XP, or by a single stat's XP if `stat` is given.
+### `GET /api/stats/leaderboard`
+Ranks users whose `profiles.role` is `student` by total subject XP, or by one stat's XP if `stat` is given.
 ```json
-{ "entries": [ { "position": 1, "userId": "alice", "displayName": "Alice", "score": 63, "rank": 2, "rankTitle": "Apprentice" } ] }
+{ "entries": [ { "position": 1, "userId": "…", "displayName": "alice", "score": 63, "rank": 2, "rankTitle": "Apprentice" } ] }
 ```
 `rankTitle` is only included when `stat` is set; otherwise `rank` is the overall rank.
 
 ## 5. Chatbot integration contract
 
-The keyword classifier is a **fallback**. It is fast and free, but it is blunt. The chatbot already understands the question, so it should send a classification. Suggested addition to the LLM's tool or structured-output schema:
+The keyword classifier is a **fallback**: fast and free, but blunt. The chatbot understands the question, so it should send a classification. Suggested structured-output schema for the LLM:
 
 ```json
 {
@@ -227,7 +233,7 @@ The keyword classifier is a **fallback**. It is fast and free, but it is blunt. 
   "properties": {
     "weights": {
       "type": "object",
-      "description": "Relevance of the user's question to each stat, 0-1. Omit irrelevant stats.",
+      "description": "Relevance of the student's question to each stat, 0-1. Omit irrelevant stats.",
       "properties": {
         "algebra": {"type": "number"}, "calculus": {"type": "number"},
         "geometry": {"type": "number"}, "discrete": {"type": "number"},
@@ -239,71 +245,81 @@ The keyword classifier is a **fallback**. It is fast and free, but it is blunt. 
   "required": ["weights", "depth"]
 }
 ```
-Pass the result as `classification` in `POST /questions`. Weights don't need to sum to 1. Invalid stat ids are ignored. If every weight turns out invalid, the backend falls back to keywords. Build the stat list in the schema from `GET /api/subjects` so it stays correct when subjects change.
 
-If the chatbot is a Next.js route in the same app, skip HTTP and call the library directly (server-side only):
-```ts
-import { recordQuestion } from "@/lib/stats";
-const award = await recordQuestion({ userId, question, classification });
-```
+Pass the result as `classification`. Weights don't need to sum to 1. Invalid stat ids are ignored. If every weight is invalid, the backend falls back to keywords. Build the stat list from `SUBJECTS` / `GET /api/stats/subjects` so it stays correct when subjects change.
 
-## 6. Using the library directly (server code)
+**Call `recordQuestion()` from the chatbot's Server Action or Route Handler**, with `userId` from `getCurrentUser()`. Never take the userId from the request body. The HTTP route `/api/stats/me/questions` exists for convenience, but a student could call it directly with made-up questions. The anti-farming caps limit how much that is worth.
 
-Everything is exported from `@/lib/stats` (`src/lib/stats/index.ts`):
+## 6. Library reference (server code)
+
+Everything is exported from `@features/logic/stats`. **These functions don't check permissions.** Authenticate first with `getCurrentUser()` and decide who may act on which `userId`. The handlers in `stats/api/` show the pattern via `requireUser()`, `requireTeacher()` and `requireTeacherOrSelf()`.
 
 | Function | Description |
 |---|---|
 | `recordQuestion({ userId, question, subject?, classification?, displayName? })` | Main entry point → `AwardResult` |
 | `awardXp({ userId, xp, reason, subject? })` | Direct award → `AwardResult` |
-| `getHexagon(userId, subject?)` | → `HexagonView` |
-| `getAllHexagons(userId)` | → `HexagonView[]` |
-| `getUser(userId)` | → `UserProfile` (throws 404 `StatsError`) |
-| `upsertUser(userId, displayName?)` | → `UserProfile` |
+| `getHexagon(userId, subject?, db?)` | → `HexagonView` (zeros if no stats) |
+| `getUser(userId, db?)` | → `UserProfile` (404 `StatsError` if no stats) |
+| `hexagonsFor(profile \| null)` | → `HexagonView[]` for every subject |
 | `resetSubject(userId, subject?)` | → `HexagonView` |
 | `getLeaderboard({ subject?, stat?, limit? })` | → `LeaderboardEntry[]` |
 | `resolveClassification(subject, question, provided?)` | → `Classification` (no writes) |
+| `renderUserMarkdown(profile)` | → the Markdown stats file |
 | `listSubjects()`, `getSubject(id)`, `SUBJECTS` | Subject definitions |
 
-`StatsError` carries an HTTP `status`. Wrap route handlers with `handle()` from `src/lib/http.ts` to map it automatically.
+`db` is an optional Supabase client for reads. Pass the user's own client (`await createClient()` from `@features/logic/supabase/server`) to have RLS enforce what they may read. It defaults to the admin client. Writes always use the admin client.
 
-The stats modules use `node:fs`, so **never import `@/lib/stats` into a client component**. Client code may import types only, from `@/lib/stats/types`.
+`StatsError` carries an HTTP `status`. `handle()` in `stats/api/http.ts` maps it to a JSON response and re-throws Next's redirect errors.
 
-## 7. Storage format (`data/users/<userId>.md`)
+## 7. Storage (Supabase `public.student_stats`)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `user_id` | uuid PK → `auth.users(id)`, cascade delete | Whose stats |
+| `data` | jsonb | `UserProfile` (see `types.ts`). **Source of truth.** |
+| `markdown` | text | The same profile as a Markdown document, regenerated on every save (format below). Never parsed back. |
+| `version` | int | Optimistic-concurrency counter |
+| `updated_at` | timestamptz | Last save |
+
+Markdown format (view it in Table Editor, or `select markdown from student_stats where user_id = '…'`):
 
 ```markdown
 ---
-{ "schemaVersion": 1, "userId": "alice", "displayName": "Alice",
-  "subjects": { "maths": { "stats": { "discrete": { "xp": 63, "rank": 2, "questions": 1 }, ... },
-                           "totalXp": 79, "questions": 2, "daily": {...}, "recentQuestionHashes": [...] } },
-  "activity": [ ... ] }
+{ "schemaVersion": 1, "userId": "…", "displayName": "alice", "subjects": { "maths": { … } }, "activity": [ … ] }
 ---
 
-# Alice — Learning Stats
+# alice — Learning Stats
 ## Mathematics
 | Stat | Rank | Title | XP | Next rank at | Progress |
 | Discrete | 2 | Apprentice | 63 | 80 | ███████░░░ |
-...
 ## Recent activity
 - 2026-11-07 12:54 · maths · conceptual · +11 linear_algebra, +5 probability — "Explain eigenvalues…"
 ```
 
-- The **JSON frontmatter is the source of truth**. JSON is valid YAML, so any frontmatter parser can read it.
-- The body below it is a human-readable summary that is **rewritten on every save**. Edits to the body are lost; edit the JSON instead.
-- Writes are atomic: the file is written to a temp file and then renamed over the original.
-- Read-modify-write cycles are serialised per user by an in-process lock. A test with 20 parallel requests lost no updates.
-- The activity log keeps the last 50 entries. Daily-cap bookkeeping keeps 7 days.
+**Access (RLS):**
+
+| Who | Access |
+|---|---|
+| Logged-in user | `select` their own row |
+| Teacher (`public.is_teacher()`) | `select` every row |
+| `anon` | nothing |
+| Server (`service_role` via `createAdminClient()`) | everything. **All writes go through it**, so students can't edit their own XP through the public API. |
+
+**Concurrency:** `mutateUser()` in `store.ts` reads the row and its `version`, applies the change, then saves with `update … where version = <read version>`. If another request saved first, it re-reads and retries, up to 25 times. A new row uses `insert`, and a duplicate-key error triggers a retry. This works across serverless instances, unlike an in-memory lock.
+
+The activity log keeps the last 50 entries. Daily-cap bookkeeping keeps 7 days. The duplicate check remembers the last 50 question hashes.
 
 ## 8. Extending
 
-- **New subject**: add an entry to `SUBJECTS` in `subjects.ts` with exactly 6 stats, each with keywords. Nothing else needs to change. Existing users get the new subject the first time they earn XP in it.
-- **New stat on an existing subject**: it is filled in with zeros when old files load. Keep exactly 6 stats per subject or the hexagon breaks.
-- **Balance**: everything is in `config.ts`, including thresholds, titles, multipliers and caps.
-- **Better classification**: replace or extend `classifier.ts`, or rely on the chatbot's classification (§5).
+- **New subject**: add an entry to `SUBJECTS` in `subjects.ts` with exactly 6 stats and keywords. Users get the subject the first time they earn XP in it. No migration is needed, because it lives in `data`.
+- **New stat on an existing subject**: it's filled with zeros when old rows load. Keep exactly 6 per subject.
+- **Balance**: everything is in `config.ts`.
+- **Schema changes**: add a **new** migration file. Never edit one that has already been run (see logic.md conventions).
 
 ## 9. Known limitations / TODO
 
-- **No authentication.** `userId` comes from the URL. Add session auth before anything public.
-- **File storage only works on one long-running Node server** (`next dev` / `next start`). On serverless hosts such as Vercel the filesystem is read-only or ephemeral, and the lock only covers a single process. Before deploying, swap `store.ts` for a database or KV store. Its 3 functions (`readUser`, `writeUser`, `listUserIds`) are the whole storage interface.
-- The leaderboard reads every user file on each request. That is fine for a demo but won't scale.
-- The keyword classifier misses some cases: "series" counts as calculus even when it means something else, and short keywords like `set` or `graph` can match casual wording.
-- No tests yet. `engine.ts` is pure and the obvious place to add unit tests.
+- Display names come from the email address (the part before `@`), set when the stats row is created. A proper name field on `profiles` would be better.
+- The leaderboard loads every stats row. That's fine for a class; for more users, move it into a SQL view or RPC that reads `data->'subjects'->'maths'->>'totalXp'`.
+- Students can call `/api/stats/me/questions` directly. Prefer server-side `recordQuestion()` from the chatbot.
+- The keyword classifier is blunt: short keywords like `set` or `graph` can match casual wording.
+- No unit tests yet. `engine.ts` is pure and the obvious place to start. The SQL and RLS were tested in PGlite (see logic.md).

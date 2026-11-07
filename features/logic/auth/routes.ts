@@ -9,3 +9,9 @@ export const HOME_PATH = '/dashboard';
  * Logged-in users who open one of these are sent to HOME_PATH instead.
  */
 export const PUBLIC_PATHS: readonly string[] = ['/login', '/signup'];
+
+/**
+ * Route Handlers live under this prefix. Logged-out requests to them get a
+ * JSON 401 from the proxy instead of a redirect to the login page.
+ */
+export const API_PREFIX = '/api/';

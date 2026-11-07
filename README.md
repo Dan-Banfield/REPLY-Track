@@ -47,33 +47,39 @@ cp .env.example .env
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-secret-key
+OPENAI_API_KEY=your-openai-key
 ```
 
 | Variable | Where to find it |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings → API** (called **Data API** in newer dashboards) → Project URL. The **Connect** button at the top of the project shows it too. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → **Project Settings → API Keys** → the **anon** key (legacy) or the **publishable** key (`sb_publishable_…`); either works |
+| `SUPABASE_SERVICE_ROLE_KEY` | Same page → the **secret** key (`sb_secret_…`) or the legacy **service_role** key. **Secret**: the server uses it to save student stats. |
+| `OPENAI_API_KEY` | [OpenAI dashboard](https://platform.openai.com/api-keys). **Secret**: for the chatbot. |
 
 - This project uses **`.env`** (not `.env.local`). It is git-ignored; `.env.example` is the committed template.
-- Both values are safe to expose to the browser. **Never** put the `service_role` / secret key in this file under a `NEXT_PUBLIC_` name.
+- The two `NEXT_PUBLIC_` values are safe to expose to the browser. The other two are secrets: **never** rename them to `NEXT_PUBLIC_…`, and never commit `.env`.
 
 ### 4. Create the database tables
 
-The app reads each user's role from a `profiles` table, which you create once by running the SQL in [`features/logic/migrations/`](features/logic/migrations/):
+Create the tables once by running the SQL files in [`features/logic/migrations/`](features/logic/migrations/), **in filename order**:
 
 1. Supabase → **SQL Editor → New query**
-2. Paste the **whole** contents of [`features/logic/migrations/20261107000000_create_profiles.sql`](features/logic/migrations/20261107000000_create_profiles.sql)
-3. Click **Run**. You should see *"Success. No rows returned"*.
-4. Check **Table Editor** (schema `public`): a `profiles` table should now exist.
+2. Paste the **whole** contents of [`20261107000000_create_profiles.sql`](features/logic/migrations/20261107000000_create_profiles.sql) and click **Run**. You should see *"Success. No rows returned"*.
+3. Do the same with [`20261107180000_create_student_stats.sql`](features/logic/migrations/20261107180000_create_student_stats.sql).
+4. Check **Table Editor** (schema `public`): `profiles` and `student_stats` should now exist.
 
-The script creates:
+The first script creates:
 
 - the `user_role` type (`teacher` | `student`)
 - the `profiles` table and its security rules (users can read only their own profile and can't change their role)
 - a trigger that creates a profile whenever someone signs up
 - profiles for any accounts that already exist
 
-It is safe to run more than once. If more migration files are added later, run them in filename order.
+The second creates `student_stats`, which holds each student's hexagon stats (as JSON plus a readable Markdown copy). Students can read their own row and teachers can read everyone's. Only the server can write, using the secret key. See [`features/logic/backend.md`](features/logic/backend.md).
+
+Both scripts are safe to run more than once. If more migration files are added later, run them in filename order.
 
 ### 5. Auth settings
 
@@ -111,10 +117,12 @@ The code is organised in **feature folders**: each doc in `features/` sits in it
 
 ```
 features/
-├── logic/                   # How it works: auth, roles, Supabase, SQL
+├── logic/                   # How it works: auth, roles, Supabase, SQL, hexagon stats
 │   ├── logic.md             # Docs for this folder
+│   ├── backend.md           # Docs for the hexagon stats backend and /api/stats
 │   ├── auth/                # Server Actions, proxy (route protection), roles, routes, getCurrentUser()
-│   ├── supabase/            # Supabase clients (server and browser)
+│   ├── supabase/            # Supabase clients (server, browser, and admin/service_role)
+│   ├── stats/               # Hexagon stats: XP rules, Supabase storage, API handlers
 │   └── migrations/          # SQL to run in the Supabase SQL Editor
 ├── ux/                      # What users see: theme, components, screens
 │   ├── ux.md                # Docs for this folder
@@ -127,7 +135,7 @@ features/
 └── leaderboard/             # Planned feature (docs only so far)
 src/                         # Next.js entry points only: one-line re-exports from features/
 ├── proxy.ts                 # → features/logic/auth/proxy.ts (+ which URLs it runs on)
-└── app/                     # Routes: layout, error, (auth)/login, (auth)/signup, dashboard
+└── app/                     # Routes: layout, error, (auth)/login, (auth)/signup, dashboard, api/stats
 ```
 
 Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, so those files stay there as one-line re-exports, e.g. `export { default, metadata } from '@features/ux/auth/LoginPage';`. Import feature code with the `@features/...` alias.
@@ -152,6 +160,8 @@ Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, s
 | *"Confirm your email address before signing in."* | Click the link in the confirmation email, or turn off **Confirm email** (step 5). Accounts created in the dashboard need **Auto Confirm User** ticked. |
 | *"Too many sign-up emails were sent recently."* | The free tier's email limit was hit. Turn off **Confirm email** while developing (step 5). |
 | *"Sign-in failed. Please try again."* and the terminal shows `fetch failed` | `.env` still has placeholder or wrong values. Fix them and restart `npm run dev`. |
+| `/api/stats/...` returns *"Table public.student_stats is missing…"* | Run the second SQL file from [step 4](#4-create-the-database-tables). |
+| `/api/stats/...` returns `Internal server error` and the terminal mentions `SUPABASE_SERVICE_ROLE_KEY` | Add the secret key to `.env` ([step 3](#3-environment-variables)) and restart `npm run dev`. |
 | Every page errors with *"Your project's URL and Key (or API key) are required to create a Supabase client"* | `.env` is missing or a variable name is misspelled. Fix it and restart `npm run dev`. |
 | Icons show as words (e.g. "dashboard") | The icon font couldn't load (offline?), or a new icon wasn't added to the list; see "Icons" in [`features/ux/ux.md`](features/ux/ux.md#icons-material-symbols). |
 | *"Another next dev server is already running"* | Only one dev server can run per project folder. Use the existing one, or stop it first. |
@@ -161,6 +171,7 @@ Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, s
 Detailed, up-to-date docs for developers (and AI coding agents) sit next to the code they describe in [`features/`](features/):
 
 - [`features/logic/logic.md`](features/logic/logic.md): auth flow, route protection, roles and SQL, Supabase setup, folder structure and conventions, gotchas
+- [`features/logic/backend.md`](features/logic/backend.md): hexagon stats: XP and rank rules, the `/api/stats` routes, the `student_stats` table, how the chatbot should report questions
 - [`features/ux/ux.md`](features/ux/ux.md): Material 3 theme and components, layout, navigation config, what each role sees
 - [`features/leaderboard/leaderboard.md`](features/leaderboard/leaderboard.md): planned feature (empty for now)
 
