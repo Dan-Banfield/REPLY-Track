@@ -2,7 +2,7 @@
 
 The Material 3 theme, the components used, the layout, how navigation works and what each role sees. Read it together with [`logic.md`](../logic/logic.md), which covers the app logic.
 
-_Last updated: after step 7. The UI code now lives in this folder (`features/ux/`)._
+_Last updated: Students page added to the rail for teachers (UI in `features/teacher/`, see [`teacher.md`](../teacher/teacher.md))._
 
 ---
 
@@ -12,11 +12,11 @@ _Last updated: after step 7. The UI code now lives in this folder (`features/ux/
 
 - Material Design 3 theme with **light and dark** colour schemes (dark follows the OS setting).
 - Roboto font and the official M3 **type scale** classes.
-- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`, `md-icon`, `md-ripple`, `md-focus-ring`.
+- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-filled-icon-button`, `md-radio`, `md-outlined-text-field`, `md-icon`, `md-ripple`, `md-focus-ring`.
 - **Material Symbols** icons (Outlined), loaded from Google Fonts and limited to the icons the app uses.
 - **Login page** (`/login`) and **sign-up page** (`/signup`), sharing one M3 outlined-card layout. Each links to the other.
-- **Dashboard layout** (`/dashboard/**`): an M3 **navigation rail** on the left, page content on the right. The rail is built from one config array (`features/ux/navigation/navigation.ts`), filtered by role, with **Log out** at the bottom. It currently has one destination: **Overview** (`/dashboard`).
-- **Overview page** (`/dashboard`): a welcome line and three placeholder cards (M3 filled cards). The cards are different for teachers and students.
+- **Dashboard layout** (`/dashboard/**`): an M3 **navigation rail** on the left, page content on the right. The rail is built from one config array (`features/ux/navigation/navigation.ts`), filtered by role, with **Log out** at the bottom. Its destinations are **Overview** (`/dashboard`, both roles), **Study** (`/dashboard/session`, students only) and **Students** (`/dashboard/students`, teachers only).
+- **Overview page** (`/dashboard`): a welcome line and M3 filled cards, different for teachers and students. Students get their stats hexagon and feedback; the other cards are placeholders.
 - **Error page** for every route: "Something went wrong" with **Try again** (filled) and **Log out** (outlined).
 - Users never see a page at `/`. They are redirected to `/login` or `/dashboard`.
 - Reusable form building blocks: `MaterialForm`, `SubmitButton`, `FormError` (`features/ux/material/MaterialForm.tsx`).
@@ -25,7 +25,7 @@ _Last updated: after step 7. The UI code now lives in this folder (`features/ux/
 
 **Not built yet**
 
-- Real content behind the Overview cards (they are placeholders). See [Next steps](#next-steps).
+- Real content behind most Overview cards (they are placeholders). See [Next steps](#next-steps).
 
 ---
 
@@ -39,10 +39,11 @@ Everything this document describes lives next to it in **`features/ux/`**:
 | --- | --- |
 | `theme/` | `theme.css` (M3 design tokens, light + dark), `globals.css` (tiny base styles) |
 | `material/` | `MaterialWeb.tsx` (component registration), `material-web.d.ts` (JSX types), `MaterialForm.tsx` (+ `.module.css`), `material-symbols.ts` (icon font URL) |
+| `markdown/` | `Markdown.tsx` (+ `.module.css`): renders Markdown and LaTeX maths, for tutor replies and student files. Images and links are dropped, because the text can include what a student typed. |
 | `navigation/` | `navigation.ts` (`NAV_ITEMS` config), `NavigationRail.tsx` (+ `.module.css`) |
 | `root/` | `RootLayout.tsx` (fonts, theme CSS, Material Web), `ErrorPage.tsx` |
 | `auth/` | `AuthLayout.tsx`, `AuthHeader.tsx`, `auth.module.css`, `LoginPage.tsx`, `LoginForm.tsx`, `SignupPage.tsx`, `SignupForm.tsx`, `LogoutButton.tsx` |
-| `dashboard/` | `DashboardLayout.tsx` (+ `.module.css`), `OverviewPage.tsx` (+ `.module.css`), `overview/` (`TeacherOverview`, `StudentOverview`, `PlaceholderCard`, `overview.module.css`) |
+| `dashboard/` | `DashboardLayout.tsx` (+ `.module.css`), `OverviewPage.tsx` (+ `.module.css`), `overview/` (`TeacherOverview`, `StudentOverview`, `PlaceholderCard`, `Hexagon` + `.module.css`, `Feedback`, `overview.module.css`) |
 
 Next.js only picks up routes from `src/app/`, so each screen also has a **one-line route entry** there that re-exports it. For example, `src/app/(auth)/login/page.tsx` contains `export { default, metadata } from '@features/ux/auth/LoginPage';`. Behaviour and data (Server Actions, `getCurrentUser()`, roles, Supabase) come from `features/logic/` (see [`logic.md`](../logic/logic.md), "Folder structure").
 
@@ -75,6 +76,7 @@ Because the elements start up *before* React hydrates, some of them add attribut
 | Element | Attribute it adds itself |
 | --- | --- |
 | `md-outlined-text-field` | `inputmode=""` |
+| `md-filled-icon-button` | moves `aria-label` to `data-aria-label` |
 | `md-radio` | `tabindex` (managed by the radio group for keyboard focus) |
 | `md-ripple` | `aria-hidden="true"` |
 | `md-focus-ring` | `aria-hidden="true"` |
@@ -97,7 +99,7 @@ All theme values live in **`features/ux/theme/theme.css`**:
 - `<md-icon>name</md-icon>` renders a [Material Symbols](https://fonts.google.com/icons) icon by name (Outlined style, 24px).
 - The font is a stylesheet `<link>` in `features/ux/root/RootLayout.tsx`. Its URL is built in `features/ux/material/material-symbols.ts` and asks Google Fonts for **only the icons the app uses** (`&icon_names=…`), so the download stays a few KB. The list is made automatically from:
   - every `icon` in `NAV_ITEMS` (`features/ux/navigation/navigation.ts`), and
-  - `OTHER_ICONS` in `material-symbols.ts` (currently `logout`).
+  - `OTHER_ICONS` in `material-symbols.ts` (currently `arrow_upward` and `logout`).
 - **Using an icon anywhere outside the nav config? Add its name to `OTHER_ICONS`**, or it shows up as plain text (e.g. the word "settings").
 - The FILL axis is included: `font-variation-settings: 'FILL' 1` gives the filled version (used for the active rail item).
 - `next/font` doesn't support Material Symbols, which is why this one font comes straight from Google Fonts.
@@ -256,8 +258,10 @@ Welcome, you@example.com. Here's what's happening in your classes.   ← body-la
   | | Teacher (`TeacherOverview.tsx`) | Student (`StudentOverview.tsx`) |
   | --- | --- | --- |
   | Welcome line | "Here's what's happening in your classes." | "Here's an overview of your learning." |
-  | Cards | My classes · Student progress · Recent activity | My progress · Coming up · Recent feedback |
+  | Cards | My classes · Student progress · Recent activity | My progress (hexagon) · Recent feedback · Coming up |
 
+- **Stats hexagon** (`features/ux/dashboard/overview/Hexagon.tsx`): the student's "My progress" card, across the full width of the grid. The Students page reuses it with a different `title`. It is an SVG radar chart of the subject's six stats, with the same numbers listed beside it (below it on phones). The chart's width is capped so its labels stay close to the size of the text around them. The data comes from `getHexagon()` in `StudentOverview`, and XP earned on the Study page shows up on the next visit to Overview.
+- **Feedback** (`features/ux/dashboard/overview/Feedback.tsx`): the "Recent feedback" card, across the full width of the grid. It shows the running note written after each session (see [`teacher.md`](../teacher/teacher.md)), or `emptyText` before the first one. The Students page reuses it. A student who opens Overview straight after a session may see the old note for a few seconds, because it is written after their result.
 - **To change what a role sees:** edit that role's component. Each receives the `user` (`id`, `email`, `role`) as a prop and is a Server Component, so it can fetch data directly. The mapping from role to component is `OVERVIEW_BY_ROLE` in `features/ux/dashboard/OverviewPage.tsx`.
 
 ### Error page (`features/ux/root/ErrorPage.tsx`)
@@ -310,13 +314,17 @@ This exact example was tried during step 5 (in a throwaway copy): teachers saw O
 | --- | --- | --- |
 | Logged out | `/login`, `/signup` | everything else → `/login` |
 | Logged in (teacher or student) | `/dashboard` (Overview) | `/`, `/login`, `/signup` → `/dashboard` |
+| Logged in (student only) | `/dashboard/session` | Teachers get the 404 page |
+| Logged in (teacher only) | `/dashboard/students` | Students get the 404 page |
 
 | | Teacher | Student |
 | --- | --- | --- |
-| Navigation rail | Overview, Log out | Overview, Log out |
-| Overview page | Welcome line + My classes, Student progress, Recent activity | Welcome line + My progress, Coming up, Recent feedback |
+| Navigation rail | Overview, Students, Log out | Overview, Study, Log out |
+| Overview page | Welcome line + My classes, Student progress, Recent activity | Welcome line + My progress (stats hexagon), Recent feedback, Coming up |
+| Study page | Not available | Tutor chat, end-of-session quiz |
+| Students page | Every student's hexagon and feedback, with stats and recent activity folded away | Not available |
 
-The rail is filtered by role, but its only entry (Overview) is for both roles. Teacher-only or student-only pages can be added through the [navigation config](#navigation-config-featuresuxnavigationnavigationts).
+More teacher-only or student-only pages can be added through the [navigation config](#navigation-config-featuresuxnavigationnavigationts).
 
 ---
 

@@ -14,6 +14,7 @@
  * before React hydrates, which React reports as a mismatch in dev. Give these
  * the `suppressHydrationWarning` prop wherever they are used:
  *   - md-outlined-text-field (adds inputmode="")
+ *   - md-filled-icon-button  (moves aria-label to data-aria-label)
  *   - md-radio               (adds tabindex)
  *   - md-ripple              (adds aria-hidden)
  *   - md-focus-ring          (adds aria-hidden)
@@ -25,6 +26,7 @@ import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/focus/md-focus-ring.js';
 import '@material/web/icon/icon.js';
+import '@material/web/iconbutton/filled-icon-button.js';
 import '@material/web/radio/radio.js';
 import '@material/web/ripple/ripple.js';
 import '@material/web/textfield/outlined-text-field.js';

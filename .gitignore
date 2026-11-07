@@ -20,6 +20,9 @@
 # production
 /build
 
+# runtime data: per-user stats and chat sessions (features/logic/stats, features/chatbot)
+/data/
+
 # misc
 .DS_Store
 *.pem

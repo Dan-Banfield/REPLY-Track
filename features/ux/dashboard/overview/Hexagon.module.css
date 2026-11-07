@@ -1,0 +1,72 @@
+/* M3 filled card across the whole grid row: chart on the left, numbers on the right. */
+.card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 16px;
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+}
+
+.heading {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.heading h2,
+.heading p {
+  margin: 0;
+}
+
+.heading p {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Capped so the chart's labels stay close to the size of the text around them. */
+.card svg {
+  flex: 1 1 280px;
+  max-width: 440px;
+  min-width: 0;
+  display: block;
+  height: auto;
+}
+
+.ring {
+  fill: none;
+  stroke: var(--md-sys-color-outline-variant);
+  stroke-width: 1;
+}
+
+.shape {
+  fill: var(--md-sys-color-primary);
+  fill-opacity: 0.35;
+  stroke: var(--md-sys-color-primary);
+  stroke-width: 2;
+}
+
+.axisLabel {
+  fill: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+}
+
+.statList {
+  flex: 1 1 220px;
+  min-width: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}

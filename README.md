@@ -12,7 +12,9 @@ What's included:
 - Route protection: logged-out users always land on `/login`, logged-in users on the dashboard
 - Roles stored in a Supabase `profiles` table, protected by Row Level Security
 - A dashboard with an M3 navigation rail built from a single config array (with per-role visibility) and a log-out button
-- An Overview page with different placeholder content for teachers and students
+- An Overview page for each role: students see their stats hexagon and feedback, and the other cards are placeholders
+- Study sessions for students: chat with an AI maths tutor, earn XP for good questions, and finish with a quiz
+- A Students page for teachers, showing every student's hexagon and AI-written feedback
 - Light and dark theme (follows the operating system)
 
 ---
@@ -21,6 +23,7 @@ What's included:
 
 - [Node.js](https://nodejs.org/) **20.9 or newer** (includes npm)
 - A free [Supabase](https://supabase.com/) account
+- An [OpenAI API key](https://platform.openai.com/api-keys) for the chatbot
 
 ## Setup
 
@@ -47,15 +50,19 @@ cp .env.example .env
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-secret-key
+OPENAI_API_KEY=your-openai-key
 ```
 
 | Variable | Where to find it |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings → API** (called **Data API** in newer dashboards) → Project URL. The **Connect** button at the top of the project shows it too. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → **Project Settings → API Keys** → the **anon** key (legacy) or the **publishable** key (`sb_publishable_…`); either works |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → **Project Settings → API Keys** → the **service_role** key (legacy) or a **secret** key (`sb_secret_…`). Only uploading students' files for teachers needs it. |
+| `OPENAI_API_KEY` | [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Only the chatbot needs it. |
 
 - This project uses **`.env`** (not `.env.local`). It is git-ignored; `.env.example` is the committed template.
-- Both values are safe to expose to the browser. **Never** put the `service_role` / secret key in this file under a `NEXT_PUBLIC_` name.
+- The two `NEXT_PUBLIC_` values are safe to expose to the browser. **Never** give `OPENAI_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` a `NEXT_PUBLIC_` name.
 
 ### 4. Create the database tables
 
@@ -73,7 +80,7 @@ The script creates:
 - a trigger that creates a profile whenever someone signs up
 - profiles for any accounts that already exist
 
-It is safe to run more than once. If more migration files are added later, run them in filename order.
+It is safe to run more than once. Then do the same with [`features/logic/migrations/20261107180000_create_student_files.sql`](features/logic/migrations/20261107180000_create_student_files.sql), which stores a copy of each student's stats file for teachers. If more migration files are added later, run them in filename order.
 
 ### 5. Auth settings
 
@@ -95,6 +102,7 @@ Open http://localhost:3000. You'll be redirected to `/login`.
 1. Click **Sign up**, enter an email and password, choose **Teacher** or **Student**, and create the account.
 2. Sign in. You land on the dashboard, and the Overview shows the content for your role.
 3. **Log out** is at the bottom of the navigation rail.
+4. As a student, open **Study** in the rail to chat with the tutor. Your stats appear on the Overview. Once you finish a session, you also get written feedback there, and teachers see your hexagon and feedback under **Students**. Stats and sessions are saved in a git-ignored `data/` folder.
 
 ## Scripts
 
@@ -111,9 +119,11 @@ The code is organised in **feature folders**: each doc in `features/` sits in it
 
 ```
 features/
-├── logic/                   # How it works: auth, roles, Supabase, SQL
+├── logic/                   # How it works: auth, roles, Supabase, SQL, stats
 │   ├── logic.md             # Docs for this folder
+│   ├── backend.md           # Docs for the stats engine
 │   ├── auth/                # Server Actions, proxy (route protection), roles, routes, getCurrentUser()
+│   ├── stats/               # Stats engine: XP, ranks, hexagon, file storage
 │   ├── supabase/            # Supabase clients (server and browser)
 │   └── migrations/          # SQL to run in the Supabase SQL Editor
 ├── ux/                      # What users see: theme, components, screens
@@ -123,11 +133,15 @@ features/
 │   ├── navigation/          # navigation.ts (one entry per page) + the navigation rail
 │   ├── root/                # Root layout and error page
 │   ├── auth/                # Login and sign-up pages, log-out button
-│   └── dashboard/           # Dashboard layout and the Overview page (per role)
+│   └── dashboard/           # Dashboard layout and the Overview page (per role, with the stats hexagon)
+├── chatbot/                 # Study sessions: tutor, scorer, quiz, chat screen
+│   └── chatbot.md           # Docs for this folder
+├── teacher/                 # The Students page
+│   └── teacher.md           # Docs for this folder
 └── leaderboard/             # Planned feature (docs only so far)
 src/                         # Next.js entry points only: one-line re-exports from features/
 ├── proxy.ts                 # → features/logic/auth/proxy.ts (+ which URLs it runs on)
-└── app/                     # Routes: layout, error, (auth)/login, (auth)/signup, dashboard
+└── app/                     # Routes: layout, error, (auth)/login, (auth)/signup, dashboard, api/chat
 ```
 
 Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, so those files stay there as one-line re-exports, e.g. `export { default, metadata } from '@features/ux/auth/LoginPage';`. Import feature code with the `@features/...` alias.
@@ -153,6 +167,9 @@ Next.js requires routes to live in `src/app/` and the proxy in `src/proxy.ts`, s
 | *"Too many sign-up emails were sent recently."* | The free tier's email limit was hit. Turn off **Confirm email** while developing (step 5). |
 | *"Sign-in failed. Please try again."* and the terminal shows `fetch failed` | `.env` still has placeholder or wrong values. Fix them and restart `npm run dev`. |
 | Every page errors with *"Your project's URL and Key (or API key) are required to create a Supabase client"* | `.env` is missing or a variable name is misspelled. Fix it and restart `npm run dev`. |
+| Sending a chat message shows *"Something went wrong"* | `OPENAI_API_KEY` is missing or wrong in `.env`. Fix it and restart `npm run dev`. The terminal shows the error from OpenAI. |
+| **Students** shows *"Something went wrong"*; the terminal shows *"Could not load student files"* | The student files SQL hasn't been run. Do [step 4](#4-create-the-database-tables), then click **Try again**. |
+| **Students** is out of date; the terminal shows *"Could not upload the student file"* | `SUPABASE_SERVICE_ROLE_KEY` is missing or wrong in `.env`, or the student files SQL hasn't been run. Fix it and restart `npm run dev`. The file uploads again when that student next finishes a session. |
 | Icons show as words (e.g. "dashboard") | The icon font couldn't load (offline?), or a new icon wasn't added to the list; see "Icons" in [`features/ux/ux.md`](features/ux/ux.md#icons-material-symbols). |
 | *"Another next dev server is already running"* | Only one dev server can run per project folder. Use the existing one, or stop it first. |
 
@@ -162,6 +179,9 @@ Detailed, up-to-date docs for developers (and AI coding agents) sit next to the 
 
 - [`features/logic/logic.md`](features/logic/logic.md): auth flow, route protection, roles and SQL, Supabase setup, folder structure and conventions, gotchas
 - [`features/ux/ux.md`](features/ux/ux.md): Material 3 theme and components, layout, navigation config, what each role sees
+- [`features/logic/backend.md`](features/logic/backend.md): the stats engine: XP rules, ranks, hexagon data, storage
+- [`features/chatbot/chatbot.md`](features/chatbot/chatbot.md): student sessions: tutor, scorer, quiz, what's not built yet
+- [`features/teacher/teacher.md`](features/teacher/teacher.md): the Students page and the `student_files` table
 - [`features/leaderboard/leaderboard.md`](features/leaderboard/leaderboard.md): planned feature (empty for now)
 
 [`AGENTS.md`](AGENTS.md) has notes for AI coding agents, including that this project uses Next.js 16 conventions (e.g. `proxy.ts` instead of `middleware.ts`).

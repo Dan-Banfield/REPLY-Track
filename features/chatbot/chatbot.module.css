@@ -1,0 +1,253 @@
+/* Fills the window: the negative margin cancels the dashboard's 24px padding. */
+.screen {
+  margin: -24px;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 64px;
+  padding: 12px 24px;
+}
+
+.header h1 {
+  margin: 0;
+}
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Before the first message, the greeting and message box sit in the middle of the screen. */
+.chat[data-empty] {
+  justify-content: center;
+  padding-bottom: 64px;
+}
+
+/* The scrolling area spans the full width, so its scrollbar sits at the window edge. */
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.column {
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 8px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Messages */
+.student {
+  align-self: flex-end;
+  max-width: 80%;
+  margin: 0;
+  padding: 10px 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border-radius: 20px;
+}
+
+.tutor {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tutor .scoring {
+  margin: 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.tutor .award {
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 12px;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+}
+
+.thinking {
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 6px 0;
+  background: var(--md-sys-color-on-surface);
+  border-radius: 50%;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking {
+    animation: none;
+  }
+}
+
+/* Message box */
+.dock {
+  flex: none;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 0 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 8px 8px 20px;
+  background: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 28px;
+}
+
+.composer:focus-within {
+  border-color: var(--md-sys-color-outline);
+}
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 200px;
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit;
+}
+
+.composer textarea::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.disclaimer {
+  margin: 0;
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Greeting and starter prompts */
+.greeting {
+  margin: 0 0 24px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.starters {
+  list-style: none;
+  width: 100%;
+  max-width: 768px;
+  margin: 8px auto 0;
+  padding: 0 24px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.starter {
+  padding: 8px 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+
+.starter:hover {
+  background: var(--md-sys-color-surface-container);
+}
+
+.starter:focus-visible {
+  outline: 2px solid var(--md-sys-color-secondary);
+  outline-offset: 2px;
+}
+
+/* Quiz */
+.question {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.question legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.option label {
+  cursor: pointer;
+}
+
+/* Session complete */
+.summary {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.summary h2,
+.summary p {
+  margin: 0;
+}
+
+.summary p {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}

@@ -2,7 +2,7 @@
 
 How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](../ux/ux.md), which covers the UI and design.
 
-_Last updated: after step 7. Code reorganised into per-doc feature folders (`features/logic/`, `features/ux/`)._
+_Last updated: each student's stats file is uploaded to Supabase for teachers (see [`teacher.md`](../teacher/teacher.md))._
 
 ---
 
@@ -29,8 +29,11 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
   The app reads the role from `profiles` in `getCurrentUser()`.
 - **Logout**: a Server Action ends the session, then a full page load goes to `/login`. It's triggered from the navigation rail, or from the error page.
 - **Dashboard layout** (`features/ux/dashboard/DashboardLayout.tsx`): every page under `/dashboard` gets an M3 navigation rail. Its items come from one config array (`features/ux/navigation/navigation.ts`), filtered by the user's role on the server (details in `ux.md`).
-- **Overview** (`/dashboard`): shows `TeacherOverview` or `StudentOverview` depending on the user's role. Both are placeholder cards for now (see ux.md). There is no page at `/`; the proxy always redirects it.
+- **Overview** (`/dashboard`): shows `TeacherOverview` or `StudentOverview` depending on the user's role. The student's "My progress" and "Recent feedback" cards are real; the other cards are placeholders (see ux.md). There is no page at `/`; the proxy always redirects it.
 - **Error page** (`features/ux/root/ErrorPage.tsx`): any page that fails to load (e.g. a missing profile) shows "Something went wrong" with **Try again** and **Log out**, so users are never stuck.
+- **Stats engine** (`features/logic/stats/`): turns a student's question into XP on a six-stat hexagon, stored in per-user Markdown files in `data/users/`. Documented in [`backend.md`](backend.md).
+- **Chatbot** (`features/chatbot/`): student sessions with an AI tutor, question scoring and an end-of-session quiz. Documented in [`chatbot.md`](../chatbot/chatbot.md).
+- **Student files** (`features/logic/studentFiles.ts`): when a student finishes a session, their stats file is uploaded to `public.student_files`, and teachers read it on the Students page. Documented in [`teacher.md`](../teacher/teacher.md).
 - **`README.md`**: setup for new developers. It covers install, `.env`, creating the Supabase project, running the SQL, auth settings, running locally, scripts, structure, common tasks and troubleshooting.
 - `npm run build`, `npm run lint` and `npx tsc --noEmit` all pass.
 - The SQL was tested in PGlite (Postgres 17 in WebAssembly) with a stand-in for Supabase's `auth` schema and API roles. Coverage: re-running the script, backfill, the trigger with valid/invalid/missing roles, RLS (own-row read; update/insert/delete denied; `anon` denied) and cascade delete. It has since been run in the project owner's Supabase project (see below).
@@ -49,7 +52,7 @@ _Last updated: after step 7. Code reorganised into per-doc feature folders (`fea
 
 **Not built yet**
 
-- Real content: the Overview cards are placeholders, and there are no data tables besides `profiles`.
+- Real content: most Overview cards are placeholders. The only tables are `profiles` and `student_files`. Stats and chat sessions are files, with a copy of each student's stats file in Supabase.
 - No password-reset page (out of scope).
 
 ---
@@ -62,6 +65,8 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 
 - **`features/logic/`**: behaviour and data. Supabase clients, auth (Server Actions, session, roles, routes, proxy) and the SQL. Documented here.
 - **`features/ux/`**: everything the user sees. Theme, Material Web setup, form components, navigation, and the screens (root layout, error page, auth pages, dashboard, Overview). Documented in [`ux.md`](../ux/ux.md).
+- **`features/chatbot/`**: student sessions, from the page down to the OpenAI calls. Documented in [`chatbot.md`](../chatbot/chatbot.md).
+- **`features/teacher/`**: the Students page. Documented in [`teacher.md`](../teacher/teacher.md).
 - **`features/leaderboard/`**: a planned feature; only its (empty) doc so far.
 
 `src/` only contains what Next.js requires to be there: the route files in `src/app/` and `src/proxy.ts`. Each is a **one-line re-export** from a feature folder, so the URL structure stays visible at a glance.
@@ -73,17 +78,22 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 ├── features/
 │   ├── logic/
 │   │   ├── logic.md              # This document
+│   │   ├── backend.md            # Stats engine docs
 │   │   ├── auth/
 │   │   │   ├── actions.ts        # Server Actions: login, signup, logout
 │   │   │   ├── proxy.ts          # proxy(): session refresh + redirects (re-exported by src/proxy.ts)
 │   │   │   ├── roles.ts          # ROLES, Role type, labels, isRole() (mirrors the DB enum)
 │   │   │   ├── routes.ts         # LOGIN_PATH, HOME_PATH, PUBLIC_PATHS
 │   │   │   └── session.ts        # getCurrentUser(): verified user + role for server code
+│   │   ├── studentFiles.ts       # saveStudentFile(), listStudentFiles() (see teacher.md)
+│   │   ├── stats/                # Stats engine: import from @features/logic/stats (see backend.md)
 │   │   ├── supabase/
 │   │   │   ├── server.ts         # createClient() for Server Components / Actions / Route Handlers
-│   │   │   └── client.ts         # createClient() for Client Components (not used yet)
+│   │   │   ├── client.ts         # createClient() for Client Components (not used yet)
+│   │   │   └── admin.ts          # createAdminClient(): secret key, bypasses RLS, server only
 │   │   └── migrations/           # SQL to run in the Supabase SQL Editor, in filename order
-│   │       └── 20261107000000_create_profiles.sql   # profiles table, role enum, RLS, sign-up trigger, backfill
+│   │       ├── 20261107000000_create_profiles.sql   # profiles table, role enum, RLS, sign-up trigger, backfill
+│   │       └── 20261107180000_create_student_files.sql   # a copy of each student's stats file, read by teachers
 │   ├── ux/
 │   │   ├── ux.md
 │   │   ├── theme/                # theme.css (M3 tokens, light + dark), globals.css
@@ -92,6 +102,8 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 │   │   ├── root/                 # RootLayout.tsx (fonts, theme, Material Web), ErrorPage.tsx
 │   │   ├── auth/                 # AuthLayout, AuthHeader, LoginPage/Form, SignupPage/Form, LogoutButton
 │   │   └── dashboard/            # DashboardLayout, OverviewPage, overview/ (Teacher/Student Overview, cards)
+│   ├── chatbot/                  # Sessions, tutor, scorer, quiz (see chatbot.md)
+│   ├── teacher/                  # The Students page (see teacher.md)
 │   └── leaderboard/
 │       └── leaderboard.md
 ├── src/                          # Next.js entry points only (one-line re-exports)
@@ -104,11 +116,15 @@ The code is organised by **feature folder**. Each doc in `features/` has its own
 │       │   ├── layout.tsx        # → features/ux/auth/AuthLayout
 │       │   ├── login/page.tsx    # /login  → features/ux/auth/LoginPage
 │       │   └── signup/page.tsx   # /signup → features/ux/auth/SignupPage
+│       ├── api/chat/route.ts     # POST /api/chat → features/chatbot/chatRoute
 │       └── dashboard/
 │           ├── layout.tsx        # /dashboard/* → features/ux/dashboard/DashboardLayout
-│           └── page.tsx          # /dashboard   → features/ux/dashboard/OverviewPage
+│           ├── page.tsx          # /dashboard   → features/ux/dashboard/OverviewPage
+│           ├── session/page.tsx  # /dashboard/session → features/chatbot/SessionPage
+│           └── students/page.tsx # /dashboard/students → features/teacher/StudentsPage
 ├── .env.example                  # Committed env template
 ├── .env                          # Your real keys (git-ignored)
+├── data/                         # Stats and chat session files, created at runtime (git-ignored)
 └── next.config.ts
 ```
 
@@ -146,13 +162,14 @@ Conventions:
 | `features/ux/navigation/NavigationRail.tsx` | Client component: M3 rail from the given items, active item from `usePathname()`, Log out at the bottom. |
 | `features/ux/material/material-symbols.ts` | Builds the Google Fonts URL for the icon font from the icons in `NAV_ITEMS` + `OTHER_ICONS`. |
 | `features/ux/dashboard/OverviewPage.tsx` | Overview page. Inside `<Suspense>`, `RoleOverview` calls `getCurrentUser()` and renders `OVERVIEW_BY_ROLE[role]`, a `Record<Role, Component>`, so TypeScript forces an Overview for every role. |
-| `features/ux/dashboard/overview/TeacherOverview.tsx`, `StudentOverview.tsx` | The per-role Overview content (placeholder cards). Server Components that receive the `CurrentUser`. |
+| `features/ux/dashboard/overview/TeacherOverview.tsx`, `StudentOverview.tsx` | The per-role Overview content. Server Components that receive the `CurrentUser`. `StudentOverview` reads the stats with `getHexagon()` and the feedback with `getFeedback()`; the other cards are placeholders. |
 | `features/ux/auth/LoginPage.tsx` | Login page. Reads `?signup=confirm|done` (behind `<Suspense>`) to show the post-sign-up notice. |
 | `features/ux/auth/SignupForm.tsx` | Sign-up form with the role radio group. |
 | `features/ux/material/MaterialWeb.tsx` | The one place where Material Web components are imported/registered (plus the hydration rule; see ux.md). |
 | `features/ux/material/MaterialForm.tsx` | `MaterialForm`, `SubmitButton`, `FormError`: the form building blocks every form uses (see ux.md). |
 | `features/ux/theme/theme.css` | All `--md-sys-color-*` tokens for light and dark mode, plus typeface tokens. |
-| `.env.example` / `.env` | Supabase URL and anon key (placeholders). |
+| `features/logic/stats/index.ts` | Public API of the stats engine. Server-only; client code may import types from `stats/types.ts`. |
+| `.env.example` / `.env` | Supabase URL and anon key, OpenAI key. |
 
 ### Rendering model: Cache Components are on
 
@@ -183,6 +200,7 @@ Both come from `@supabase/ssr`, which stores the session (access + refresh token
 | Use in | Import | Notes |
 | --- | --- | --- |
 | Server Components, Server Actions, Route Handlers | `import { createClient } from '@features/logic/supabase/server'` then `await createClient()` | Async, because it reads `cookies()`. Writing cookies only works in Actions and Route Handlers; in Server Components the write is silently skipped (try/catch in `setAll`). |
+| Server code that must bypass RLS | `import { createAdminClient } from '@features/logic/supabase/admin'` | Uses the secret key. Only for writes users must not make themselves, such as uploading student files. Reads should use the server client, so RLS applies. |
 | Client Components | `import { createClient } from '@features/logic/supabase/client'` | For browser-only features (e.g. realtime). Prefer server code for auth and data. |
 | `features/logic/auth/proxy.ts` | its own `createServerClient` with request/response cookies | Proxy can't use `next/headers`; it reads `request.cookies` and writes response cookies. |
 
@@ -283,7 +301,8 @@ async function TeacherOnlyContent() {
 ```
 
 - Server Actions that change role-specific data must check the role the same way, and the database should enforce it with RLS (e.g. a policy that looks up `profiles.role` for `auth.uid()`).
-- No page needs this yet: Overview is for both roles.
+- `/dashboard/session` (`features/chatbot/SessionPage.tsx`) and `/dashboard/students` (`features/teacher/StudentsPage.tsx`) both do this.
+- `notFound()` inside `<Suspense>` shows the 404 page, but the HTTP status is 200 because streaming has already started. Route Handlers such as `/api/chat` return a real 403 instead.
 
 **Common admin tasks:**
 
@@ -357,7 +376,7 @@ Needed to run the app with a real project. The root `README.md` has the same ste
 
 1. Create a project at https://supabase.com/dashboard (free tier is fine).
 2. **Project Settings → API**: copy the Project URL into `NEXT_PUBLIC_SUPABASE_URL` and the anon (or publishable) key into `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env`. Restart `npm run dev`.
-3. **SQL Editor → New query**: paste the contents of each file in `features/logic/migrations/` (in filename order; currently only `20261107000000_create_profiles.sql`) and click **Run**. "Success. No rows returned" is expected. Check under Table Editor that `profiles` exists.
+3. **SQL Editor → New query**: paste the contents of each file in `features/logic/migrations/` (in filename order: `20261107000000_create_profiles.sql`, then `20261107180000_create_student_files.sql`) and click **Run**. "Success. No rows returned" is expected. Check under Table Editor that `profiles` exists.
 4. **Authentication → Sign In / Providers → Email** must be enabled (it is by default). On the same screen:
    - **Confirm email** (on by default): new users must click a link in an email before they can sign in. The built-in email service on the free tier only sends a few emails per hour. For local development it is easiest to turn this **off**; for production, keep it on and add custom SMTP.
    - **Minimum password length** (default 6): keep `minLength` in `SignupForm.tsx` in sync.
@@ -370,10 +389,12 @@ Needed to run the app with a real project. The root `README.md` has the same ste
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase dashboard → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public API key: the legacy anon key or the newer publishable key (`sb_publishable_…`). Safe in the browser because Row Level Security protects the data. | Same page |
+| `SUPABASE_SERVICE_ROLE_KEY` | Uploading student files. Server-only: it bypasses Row Level Security. | Supabase dashboard → Project Settings → API Keys |
+| `OPENAI_API_KEY` | Chatbot tutor and scorer. Server-only. Optional model overrides are in [`chatbot.md`](../chatbot/chatbot.md). | https://platform.openai.com/api-keys |
 
 - `.env` is created with placeholder values. Paste the real values there. The project uses **`.env`** (not `.env.local`) by convention.
 - `.gitignore` ignores `.env*` but allows `.env.example`.
-- Never add the `service_role` / secret key to a `NEXT_PUBLIC_` variable.
+- Never add `OPENAI_API_KEY` or `SUPABASE_SERVICE_ROLE_KEY` to a `NEXT_PUBLIC_` variable.
 - Next.js loads `.env` in every environment (dev, build, start). If someone also creates a `.env.local`, it overrides `.env`, so keep only one.
 - If the variables are missing entirely, creating a Supabase client throws "Your project's URL and Key are required…". Since the proxy creates one on every request, **every page then fails**. If they are placeholders, pages load and sign-in/sign-up show "… failed. Please try again." The server log then shows `AuthRetryableFetchError: fetch failed`.
 
@@ -402,7 +423,7 @@ Planned build order. Each step is reviewed and committed separately.
 
 Left unfinished on purpose:
 
-- The Overview cards are placeholders with no data behind them. Real content will need its own tables and RLS policies (new migrations), read on the server in the Overview components.
+- Apart from the student's "My progress" and "Recent feedback" cards, the Overview cards are placeholders with no data behind them. Real content will need its own tables and RLS policies (new migrations), read on the server in the Overview components.
 - `features/logic/supabase/client.ts` exists but has no caller yet.
 - Database types are not generated. Query results are validated at runtime (`isRole`). When more tables arrive, consider `npx supabase gen types typescript --project-id <ref> > features/logic/supabase/database.types.ts` and pass the `Database` type to the clients.
 - Each protected page load makes two Supabase calls for the user (claims + profile). If that becomes a bottleneck, a Supabase *custom access token hook* can put the role into the JWT instead.
@@ -424,7 +445,7 @@ Left unfinished on purpose:
 - **Missing profile = error page.** If the SQL hasn't been run, or a profile row is deleted, `getCurrentUser()` throws and the user sees the error page (with Log out). The server log names the user id and points to the SQL.
 - **Role values live in two places:** the `public.user_role` enum and `ROLES` in `features/logic/auth/roles.ts`. Change both together, the database via a new migration.
 - **Role changes apply on the next page load**, not instantly in open tabs.
-- **Anyone can sign up as a teacher.** The role is self-selected, as specified. If that ever matters, add an approval step (e.g. a `pending` flag that an admin clears).
+- **Anyone can sign up as a teacher.** The role is self-selected, as specified. This now matters: every teacher can read every student's email, stats, feedback and recent messages. Add an approval step (e.g. a `pending` flag that an admin clears) before real students use the app.
 - **"Account already exists" is only reported when email confirmation is off.** With confirmation on, Supabase hides whether an email is registered (to prevent account enumeration). It returns a normal-looking result and sends no email, so the user sees the "check your email" notice.
 - **The free tier's built-in email sender is heavily rate-limited.** Repeated sign-up tests quickly hit `over_email_send_rate_limit`. Turn off "Confirm email" while developing.
 - **`LayoutProps` / `PageProps` are global types that Next generates.** On a fresh clone, `npx tsc --noEmit` fails with "Cannot find name 'LayoutProps'" until `npm run dev`, `npm run build` or `npx next typegen` has run once.
