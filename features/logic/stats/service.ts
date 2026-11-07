@@ -12,16 +12,33 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { classifyQuestion } from './classifier';
 import { DEPTH_MULTIPLIER, MAX_DIRECT_AWARD } from './config';
-import { applyGains, buildHexagon, computeQuestionGains, emptySubjectState } from './engine';
-import { assertValidUserId, listProfiles, listStudentIds, mutateUser, readUser } from './store';
+import {
+  applyGains,
+  buildHexagon,
+  capToDailyLimit,
+  computeQuestionGains,
+  emptySubjectState,
+  removeXp,
+} from './engine';
+import { parseUserMarkdown } from './markdown';
+import {
+  assertValidUserId,
+  listProfiles,
+  listStudentIds,
+  mutateUser,
+  readUser,
+  readUserFile,
+} from './store';
 import { DEFAULT_SUBJECT, getSubject, isStatOf, listSubjects, StatsError } from './subjects';
 import type {
   AwardResult,
   Classification,
   HexagonView,
   QuestionDepth,
+  QuestionQuality,
   StatId,
   StatWeights,
+  StudentFeedback,
   SubjectId,
   SubjectState,
   UserProfile,
@@ -34,7 +51,7 @@ function newProfile(userId: string, displayName?: string): UserProfile {
   return {
     schemaVersion: 1,
     userId,
-    displayName: displayName?.trim() || 'Student',
+    displayName: displayName?.trim() || userId,
     createdAt: now,
     updatedAt: now,
     subjects: {},
@@ -55,15 +72,40 @@ function sum(gains: Record<string, number>): number {
   return Object.values(gains).reduce((a, b) => a + b, 0);
 }
 
-// ---------- reads ----------
+function notFound(userId: string): never {
+  throw new StatsError(`No stats found for user "${userId}"`, 404);
+}
+
+// ---------- users ----------
 
 /**
  * A user's profile, or throw 404 if they have no stats yet.
  * Pass the caller's Supabase client to have RLS enforce access; defaults to admin.
  */
 export async function getUser(userId: string, db?: SupabaseClient): Promise<UserProfile> {
-  const profile = await readUser(userId, db);
-  if (!profile) throw new StatsError(`No stats found for user "${userId}"`, 404);
+  return (await readUser(userId, db)) ?? notFound(userId);
+}
+
+/** Create the user's stats if missing; optionally update display name. Idempotent. */
+export async function upsertUser(userId: string, displayName?: string): Promise<UserProfile> {
+  let created = false; // set by `create`, consumed by `mutate` in the same attempt
+  const { profile } = await mutateUser(
+    userId,
+    () => {
+      created = true;
+      return newProfile(userId, displayName);
+    },
+    (p, ctx) => {
+      const isNew = created;
+      created = false;
+      if (!isNew && displayName?.trim() && p.displayName !== displayName.trim()) {
+        p.displayName = displayName.trim();
+        p.updatedAt = new Date().toISOString();
+      } else if (!isNew) {
+        ctx.skipSave();
+      }
+    },
+  );
   return profile;
 }
 
@@ -85,11 +127,54 @@ export function hexagonsFor(profile: UserProfile | null): HexagonView[] {
   );
 }
 
+/** Every subject's hexagon for a user (zeros if they have no stats yet). */
+export async function getAllHexagons(userId: string, db?: SupabaseClient): Promise<HexagonView[]> {
+  return hexagonsFor(await readUser(userId, db));
+}
+
+/** A user's whole stats file (Markdown), e.g. for uploading to student_files. 404 if none. */
+export async function getUserFile(userId: string): Promise<string> {
+  return readUserFile(userId);
+}
+
+/** The user's running feedback, if a session has produced any yet. */
+export async function getFeedback(userId: string, db?: SupabaseClient): Promise<StudentFeedback | null> {
+  return (await readUser(userId, db))?.feedback ?? null;
+}
+
+/** The feedback stored in the text of a stats file. */
+export function feedbackFromFile(md: string): StudentFeedback | null {
+  return parseUserMarkdown(md).feedback ?? null;
+}
+
+/** The hexagon stored in the text of a stats file. */
+export function hexagonFromFile(md: string, subjectId: SubjectId = DEFAULT_SUBJECT): HexagonView {
+  const def = getSubject(subjectId);
+  return buildHexagon(def, parseUserMarkdown(md).subjects[subjectId] ?? emptySubjectState(def));
+}
+
+/** Replace the user's running feedback. 404 if they have no stats yet. */
+export async function saveFeedback(
+  userId: string,
+  feedback: Omit<StudentFeedback, 'updatedAt'>,
+): Promise<void> {
+  await mutateUser(
+    userId,
+    () => notFound(userId),
+    (p) => {
+      p.updatedAt = new Date().toISOString();
+      p.feedback = { ...feedback, updatedAt: p.updatedAt };
+    },
+  );
+}
+
 // ---------- classification ----------
 
 export interface ProvidedClassification {
   weights: StatWeights;
   depth?: QuestionDepth;
+  quality?: QuestionQuality;
+  isAnswer?: boolean;
 }
 
 /**
@@ -103,6 +188,10 @@ export function resolveClassification(
 ): Classification {
   const def = getSubject(subjectId);
   const fallback = classifyQuestion(def, question);
+  // A rating of "none" is a decision, so don't let the keywords overrule it.
+  if (provided?.quality === 'none') {
+    return { weights: {}, depth: fallback.depth, quality: 'none', source: 'provided' };
+  }
   if (provided && provided.weights && typeof provided.weights === 'object') {
     const valid = Object.entries(provided.weights).filter(
       ([id, w]) => isStatOf(def, id) && typeof w === 'number' && w > 0,
@@ -111,6 +200,8 @@ export function resolveClassification(
       return {
         weights: Object.fromEntries(valid),
         depth: isDepth(provided.depth) ? provided.depth : fallback.depth,
+        quality: provided.quality,
+        isAnswer: provided.isAnswer,
         source: 'provided',
       };
     }
@@ -118,7 +209,7 @@ export function resolveClassification(
   return fallback;
 }
 
-// ---------- writes ----------
+// ---------- awarding ----------
 
 export interface RecordQuestionInput {
   /** Supabase auth user id of the student who asked. */
@@ -154,7 +245,7 @@ export async function recordQuestion(input: RecordQuestionInput): Promise<AwardR
       const { gains, notes, hash } = computeQuestionGains(def, state, question, classification, now);
       const earned = Object.keys(gains).length > 0;
       const rankUps = applyGains(state, gains, {
-        hash,
+        hash: classification.isAnswer ? undefined : hash,
         countsAsQuestion: earned,
         trackDaily: true,
         now,
@@ -191,11 +282,14 @@ export interface DirectAwardInput {
   xp: Partial<Record<StatId, number>>;
   /** Shown in the activity log, e.g. "Completed quiz: Graph basics". */
   reason: string;
+  /** Count this against the daily cap instead of bypassing it. */
+  respectDailyCap?: boolean;
 }
 
 /**
  * Award XP directly (quizzes, streak bonuses, teacher tools). Skips the
- * classifier, duplicate check and daily cap, but is clamped per stat per call.
+ * classifier and duplicate check, and the daily cap unless `respectDailyCap`
+ * is set, but is clamped per stat per call.
  */
 export async function awardXp(input: DirectAwardInput): Promise<AwardResult> {
   const subjectId = input.subject ?? DEFAULT_SUBJECT;
@@ -205,23 +299,27 @@ export async function awardXp(input: DirectAwardInput): Promise<AwardResult> {
     throw new StatsError('reason is required', 400);
   }
 
-  const gains: Record<StatId, number> = {};
+  const clamped: Record<StatId, number> = {};
   for (const [stat, v] of Object.entries(input.xp ?? {})) {
     if (!isStatOf(def, stat)) throw new StatsError(`Unknown stat "${stat}" for ${subjectId}`, 400);
     const n = Math.round(Number(v));
-    if (Number.isFinite(n) && n > 0) gains[stat] = Math.min(n, MAX_DIRECT_AWARD);
+    if (Number.isFinite(n) && n > 0) clamped[stat] = Math.min(n, MAX_DIRECT_AWARD);
   }
-  if (Object.keys(gains).length === 0) {
+  if (Object.keys(clamped).length === 0) {
     throw new StatsError('xp must contain at least one positive value', 400);
   }
 
-  const { profile, result: rankUps } = await mutateUser(
+  const capped = input.respectDailyCap ?? false;
+  const { profile, result } = await mutateUser(
     input.userId,
     () => newProfile(input.userId),
     (p) => {
       const state = subjectState(p, subjectId);
       const now = new Date();
-      const ups = applyGains(state, gains, { countsAsQuestion: false, trackDaily: false, now });
+      const { gains, notes } = capped
+        ? capToDailyLimit(state, clamped, now)
+        : { gains: { ...clamped }, notes: [] as string[] };
+      const rankUps = applyGains(state, gains, { countsAsQuestion: false, trackDaily: capped, now });
       p.updatedAt = now.toISOString();
       p.activity.unshift({
         at: p.updatedAt,
@@ -229,9 +327,9 @@ export async function awardXp(input: DirectAwardInput): Promise<AwardResult> {
         question: `[award] ${input.reason.trim().slice(0, 190)}`,
         depth: 'apply',
         gains,
-        rankUps: ups,
+        rankUps,
       });
-      return ups;
+      return { gains, notes, rankUps };
     },
   );
 
@@ -239,12 +337,46 @@ export async function awardXp(input: DirectAwardInput): Promise<AwardResult> {
     userId: input.userId,
     subject: subjectId,
     classification: { weights: {}, depth: 'apply', source: 'provided' },
-    gains,
-    totalGain: sum(gains),
-    rankUps,
-    notes: [],
+    gains: result.gains,
+    totalGain: sum(result.gains),
+    rankUps: result.rankUps,
+    notes: result.notes,
     hexagon: buildHexagon(def, profile.subjects[subjectId]),
   };
+}
+
+/**
+ * Take XP away, e.g. for a failed quiz. Returns what was removed from each stat,
+ * which can be less than asked for because a stat can't go below 0. The daily
+ * cap isn't given back, so a student can't lose XP and earn it again the same day.
+ */
+export async function deductXp(input: DirectAwardInput): Promise<Record<StatId, number>> {
+  const subjectId = input.subject ?? DEFAULT_SUBJECT;
+  assertValidUserId(input.userId);
+  getSubject(subjectId);
+
+  const { result } = await mutateUser(
+    input.userId,
+    () => newProfile(input.userId),
+    (p, ctx) => {
+      const removed = removeXp(subjectState(p, subjectId), input.xp as Record<StatId, number>);
+      if (Object.keys(removed).length === 0) {
+        ctx.skipSave();
+        return removed;
+      }
+      p.updatedAt = new Date().toISOString();
+      p.activity.unshift({
+        at: p.updatedAt,
+        subject: subjectId,
+        question: `[penalty] ${input.reason.trim().slice(0, 190)}`,
+        depth: 'apply',
+        gains: Object.fromEntries(Object.entries(removed).map(([stat, xp]) => [stat, -xp])),
+        rankUps: [],
+      });
+      return removed;
+    },
+  );
+  return result;
 }
 
 /** Wipe a user's progress in one subject (keeps the row). 404 if they have no stats. */
@@ -255,9 +387,7 @@ export async function resetSubject(
   const def = getSubject(subjectId);
   const { profile } = await mutateUser(
     userId,
-    () => {
-      throw new StatsError(`No stats found for user "${userId}"`, 404);
-    },
+    () => notFound(userId),
     (p) => {
       p.subjects[subjectId] = emptySubjectState(def);
       p.activity = p.activity.filter((a) => a.subject !== subjectId);

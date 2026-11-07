@@ -1,9 +1,9 @@
 /**
  * Persistence: one row per user in the Supabase table public.student_stats
- * (features/logic/migrations/20261107180000_create_student_stats.sql).
+ * (features/logic/migrations/20261107190000_create_student_stats.sql).
  *
  *   data      jsonb  UserProfile, the source of truth
- *   markdown  text   rendered copy (see markdown.ts), rewritten on every save
+ *   markdown  text   the stats file (see markdown.ts), rewritten on every save
  *   version   int    optimistic-concurrency counter
  *
  * Writes use the service_role client (RLS bypassed; users can't write their
@@ -17,9 +17,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@features/logic/supabase/admin';
 
 import { MAX_ACTIVITY } from './config';
-import { migrateSubjectState } from './engine';
-import { renderUserMarkdown } from './markdown';
-import { StatsError, SUBJECTS } from './subjects';
+import { normaliseProfile, renderUserMarkdown } from './markdown';
+import { StatsError } from './subjects';
 import type { UserProfile } from './types';
 
 const TABLE = 'student_stats';
@@ -34,8 +33,6 @@ export function assertValidUserId(userId: string): void {
   }
 }
 
-type Db = SupabaseClient;
-
 type Row = { data: UserProfile; version: number };
 
 function dbError(action: string, error: { message: string; code?: string }): StatsError {
@@ -49,18 +46,7 @@ function dbError(action: string, error: { message: string; code?: string }): Sta
   return new StatsError(`Could not ${action}: ${error.message}`, 500);
 }
 
-/** Fill in fields added after a row was written (new stats, new keys). */
-function normaliseProfile(profile: UserProfile): UserProfile {
-  profile.subjects ??= {};
-  profile.activity ??= [];
-  for (const [id, state] of Object.entries(profile.subjects)) {
-    const def = SUBJECTS[id];
-    if (def) migrateSubjectState(def, state);
-  }
-  return profile;
-}
-
-async function readRow(userId: string, db: Db): Promise<Row | null> {
+async function readRow(userId: string, db: SupabaseClient): Promise<Row | null> {
   const { data, error } = await db
     .from(TABLE)
     .select('data, version')
@@ -75,10 +61,27 @@ async function readRow(userId: string, db: Db): Promise<Row | null> {
  * Read one user's profile, or null if they have no stats yet (or RLS hides the
  * row from the given client). Defaults to the admin client.
  */
-export async function readUser(userId: string, db?: Db): Promise<UserProfile | null> {
+export async function readUser(userId: string, db?: SupabaseClient): Promise<UserProfile | null> {
   assertValidUserId(userId);
-  const row = await readRow(userId, db ?? createAdminClient());
-  return row?.data ?? null;
+  return (await readRow(userId, db ?? createAdminClient()))?.data ?? null;
+}
+
+/** The stored stats file (Markdown) exactly as saved. 404 if the user has no stats. */
+export async function readUserFile(userId: string): Promise<string> {
+  assertValidUserId(userId);
+  const { data, error } = await createAdminClient()
+    .from(TABLE)
+    .select('markdown')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw dbError('read stats file', error);
+  if (!data) throw new StatsError(`No stats found for user "${userId}"`, 404);
+  return data.markdown as string;
+}
+
+export interface MutateContext {
+  /** Call to finish without saving (e.g. nothing changed). */
+  skipSave(): void;
 }
 
 /**
@@ -93,7 +96,7 @@ export async function readUser(userId: string, db?: Db): Promise<UserProfile | n
 export async function mutateUser<T>(
   userId: string,
   create: () => UserProfile,
-  mutate: (profile: UserProfile) => T,
+  mutate: (profile: UserProfile, ctx: MutateContext) => T,
 ): Promise<{ profile: UserProfile; result: T }> {
   assertValidUserId(userId);
   const db = createAdminClient();
@@ -101,7 +104,9 @@ export async function mutateUser<T>(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const row = await readRow(userId, db);
     const profile = row ? row.data : create();
-    const result = mutate(profile);
+    let skip = false;
+    const result = mutate(profile, { skipSave: () => (skip = true) });
+    if (skip) return { profile, result };
     profile.activity = profile.activity.slice(0, MAX_ACTIVITY);
 
     const payload = {
@@ -132,7 +137,7 @@ export async function mutateUser<T>(
   throw new StatsError('Too many concurrent updates for this user; try again', 409);
 }
 
-/** All profiles (admin). Fine for a hackathon-sized class; paginate if it grows. */
+/** All profiles (admin). Fine for a class; paginate if it grows. */
 export async function listProfiles(): Promise<UserProfile[]> {
   const { data, error } = await createAdminClient().from(TABLE).select('data');
   if (error) throw dbError('list stats', error);

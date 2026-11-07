@@ -1,0 +1,86 @@
+/* Rendered Markdown: tutor replies and student files. */
+.markdown {
+  overflow-wrap: anywhere;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown pre,
+.markdown table,
+.markdown blockquote {
+  margin: 0 0 12px;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 20px 0 8px;
+  font-size: 1.1em;
+  font-weight: 500;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 24px;
+}
+
+.markdown li {
+  margin-bottom: 4px;
+}
+
+.markdown code {
+  padding: 2px 4px;
+  font-size: 0.9em;
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: 4px;
+}
+
+.markdown pre {
+  padding: 12px 16px;
+  overflow-x: auto;
+  background: var(--md-sys-color-surface-container);
+  border-radius: var(--md-sys-shape-corner-medium, 12px);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown blockquote {
+  padding-left: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  border-left: 3px solid var(--md-sys-color-outline-variant);
+}
+
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+/* Without overflow-wrap: normal, narrow screens squash cells to one letter wide. */
+.markdown th,
+.markdown td {
+  padding: 6px 12px;
+  overflow-wrap: normal;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* Long equations scroll sideways instead of widening the page. */
+.markdown :global(.katex-display) {
+  margin: 12px 0;
+  padding: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}

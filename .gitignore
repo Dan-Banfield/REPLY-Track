@@ -20,6 +20,9 @@
 # production
 /build
 
+# runtime data: chat sessions (features/chatbot). Stats live in Supabase (student_stats).
+/data/
+
 # misc
 .DS_Store
 *.pem

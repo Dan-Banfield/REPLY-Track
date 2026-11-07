@@ -20,6 +20,8 @@ export type NavItem = {
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Overview', href: '/dashboard', icon: 'dashboard', roles: ['teacher', 'student'] },
+  { label: 'Study', href: '/dashboard/session', icon: 'forum', roles: ['student'] },
+  { label: 'Students', href: '/dashboard/students', icon: 'groups', roles: ['teacher'] },
 ];
 
 /** The navigation items a user with this role may see. */

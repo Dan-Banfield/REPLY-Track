@@ -29,3 +29,22 @@
 .card p {
   color: var(--md-sys-color-on-surface-variant);
 }
+
+/* A card across the whole grid row. */
+.wide {
+  grid-column: 1 / -1;
+}
+
+.card .summary {
+  color: var(--md-sys-color-on-surface);
+}
+
+.card h3 {
+  margin: 8px 0 0;
+}
+
+.points {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--md-sys-color-on-surface-variant);
+}

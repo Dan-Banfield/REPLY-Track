@@ -4,7 +4,7 @@ import { NAV_ITEMS } from '@features/ux/navigation/navigation';
  * Icons used outside the navigation config. When you use <md-icon>name</md-icon>
  * anywhere else, add the name here, or it renders as plain text.
  */
-const OTHER_ICONS = ['logout'];
+const OTHER_ICONS = ['arrow_upward', 'logout'];
 
 const iconNames = [...new Set([...NAV_ITEMS.map((item) => item.icon), ...OTHER_ICONS])].sort();
 

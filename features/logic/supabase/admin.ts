@@ -1,15 +1,15 @@
 import 'server-only';
 
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * Supabase client with the service_role (secret) key. It BYPASSES Row Level
  * Security, so only use it in server code that has already checked who the
- * caller is (e.g. with getCurrentUser()). The `server-only` import makes the
- * build fail if a Client Component ever imports this file.
- *
- * Used by the stats store (features/logic/stats/store.ts) for writes, because
- * users must not be able to write their own XP.
+ * caller is (e.g. with getCurrentUser()), and only for what users must not do
+ * themselves: writing stats (features/logic/stats/store.ts) and uploading
+ * student files (features/logic/studentFiles.ts). Reads that a user is allowed
+ * to make should use ./server.ts, so that Row Level Security applies.
+ * The `server-only` import makes the build fail if a Client Component imports it.
  */
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -19,7 +19,7 @@ export function createAdminClient() {
       'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set (see .env.example).',
     );
   }
-  return createSupabaseClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
   });
 }

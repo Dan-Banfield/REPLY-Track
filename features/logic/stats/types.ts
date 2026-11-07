@@ -34,6 +34,9 @@ export interface SubjectDefinition {
 /** How deep/valuable a question is. Multiplies the base XP. */
 export type QuestionDepth = "recall" | "clarify" | "apply" | "conceptual";
 
+/** How much a message deserves, judged by the scorer. Multiplies the XP again. */
+export type QuestionQuality = "none" | "basic" | "good" | "excellent";
+
 /**
  * Maps stat ids to relative weights (any non-negative numbers).
  * They are normalised to sum to 1 before XP is split.
@@ -44,6 +47,10 @@ export type StatWeights = Partial<Record<StatId, number>>;
 export interface Classification {
   weights: StatWeights;
   depth: QuestionDepth;
+  /** Only set by a scorer. Without one, the message counts as "basic". */
+  quality?: QuestionQuality;
+  /** The student answering the tutor, not asking. Short and repeated answers are allowed. */
+  isAnswer?: boolean;
   /** Where the classification came from. */
   source: "provided" | "keyword" | "none";
   /** Keyword hits per stat (only for source = "keyword"), handy for debugging. */
@@ -75,6 +82,14 @@ export interface ActivityEntry {
   rankUps: RankUp[];
 }
 
+/** A running note about the student, rewritten after each session. */
+export interface StudentFeedback {
+  summary: string;
+  strengths: string[];
+  workOn: string[];
+  updatedAt: string;
+}
+
 export interface UserProfile {
   schemaVersion: 1;
   userId: string;
@@ -84,6 +99,7 @@ export interface UserProfile {
   subjects: Record<SubjectId, SubjectState>;
   /** Most recent first, capped (see MAX_ACTIVITY). */
   activity: ActivityEntry[];
+  feedback?: StudentFeedback;
 }
 
 export interface RankUp {

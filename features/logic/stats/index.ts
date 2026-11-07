@@ -9,14 +9,22 @@ export * from './config';
 export { SUBJECTS, DEFAULT_SUBJECT, getSubject, listSubjects, StatsError } from './subjects';
 export { classifyQuestion } from './classifier';
 export { rankForXp, rankTitle, buildHexagon } from './engine';
-export { renderUserMarkdown } from './markdown';
+export { renderUserMarkdown, parseUserMarkdown, userFileDetails } from './markdown';
 export {
   getUser,
+  upsertUser,
   getHexagon,
+  getAllHexagons,
   hexagonsFor,
+  feedbackFromFile,
+  getFeedback,
+  getUserFile,
+  hexagonFromFile,
+  saveFeedback,
   resolveClassification,
   recordQuestion,
   awardXp,
+  deductXp,
   resetSubject,
   getLeaderboard,
 } from './service';

@@ -11,6 +11,7 @@ import {
   MAX_RANK,
   MIN_QUESTION_LENGTH,
   MIN_WEIGHT,
+  QUALITY_MULTIPLIER,
   RANK_THRESHOLDS,
   RANK_TITLES,
   RECENT_HASHES_KEPT,
@@ -68,10 +69,14 @@ export function emptySubjectState(subject: SubjectDefinition): SubjectState {
   return { stats, totalXp: 0, questions: 0, daily: {}, recentQuestionHashes: [] };
 }
 
-/** Adds any stats that were added to the subject definition after the user was created. */
+/**
+ * Adds any stats that were added to the subject definition after the user was
+ * created, and works ranks out again in case the thresholds have changed.
+ */
 export function migrateSubjectState(subject: SubjectDefinition, state: SubjectState): SubjectState {
   for (const s of subject.stats) {
     state.stats[s.id] ??= { xp: 0, rank: 1, questions: 0 };
+    state.stats[s.id].rank = rankForXp(state.stats[s.id].xp);
   }
   state.daily ??= {};
   state.recentQuestionHashes ??= [];
@@ -134,12 +139,19 @@ export function computeQuestionGains(
   const notes: string[] = [];
   const hash = questionHash(question);
   const gains: Record<StatId, number> = {};
+  const quality = classification.quality ?? "basic";
 
-  if (question.trim().length < MIN_QUESTION_LENGTH) {
+  if (quality === "none") {
+    notes.push("The scorer gave this message no XP.");
+    return { gains, notes, hash };
+  }
+  // A scorer has read the message, so a short reply like "x = 3" can still count.
+  if (classification.source !== "provided" && question.trim().length < MIN_QUESTION_LENGTH) {
     notes.push("Question too short to earn XP.");
     return { gains, notes, hash };
   }
-  if (state.recentQuestionHashes.includes(hash)) {
+  // The same answer can be right for two different problems.
+  if (!classification.isAnswer && state.recentQuestionHashes.includes(hash)) {
     notes.push("Duplicate of a recent question; no XP awarded.");
     return { gains, notes, hash };
   }
@@ -150,15 +162,29 @@ export function computeQuestionGains(
     return { gains, notes, hash };
   }
 
-  const pool = BASE_XP * DEPTH_MULTIPLIER[classification.depth];
+  const pool = BASE_XP * DEPTH_MULTIPLIER[classification.depth] * QUALITY_MULTIPLIER[quality];
+  const raw = Object.fromEntries(
+    Object.entries(weights).map(([stat, w]) => [stat, Math.max(1, Math.round(pool * w))]),
+  );
+
+  return { ...capToDailyLimit(state, raw, now), hash };
+}
+
+/** Trims XP to what each stat may still earn today. */
+export function capToDailyLimit(
+  state: SubjectState,
+  raw: Record<StatId, number>,
+  now: Date = new Date(),
+): { gains: Record<StatId, number>; notes: string[] } {
+  const notes: string[] = [];
+  const gains: Record<StatId, number> = {};
   const today = state.daily[utcDay(now)] ?? {};
 
-  for (const [stat, w] of Object.entries(weights)) {
-    const raw = Math.max(1, Math.round(pool * w));
+  for (const [stat, xp] of Object.entries(raw)) {
     const used = today[stat] ?? 0;
     const allowed = Math.max(0, DAILY_CAP_PER_STAT - used);
-    const gain = Math.min(raw, allowed);
-    if (gain < raw) {
+    const gain = Math.min(xp, allowed);
+    if (gain < xp) {
       notes.push(
         allowed === 0
           ? `Daily cap reached for "${stat}".`
@@ -168,7 +194,7 @@ export function computeQuestionGains(
     if (gain > 0) gains[stat] = gain;
   }
 
-  return { gains, notes, hash };
+  return { gains, notes };
 }
 
 /**
@@ -213,6 +239,26 @@ export function applyGains(
   for (const k of Object.keys(state.daily)) if (k < cutoff) delete state.daily[k];
 
   return rankUps;
+}
+
+/**
+ * Take XP away from subject state (MUTATES state). A stat can't go below 0, and
+ * its rank drops if it falls under a threshold. Returns what was really removed.
+ */
+export function removeXp(state: SubjectState, losses: Record<StatId, number>): Record<StatId, number> {
+  const removed: Record<StatId, number> = {};
+
+  for (const [stat, xp] of Object.entries(losses)) {
+    const s = state.stats[stat];
+    const loss = s ? Math.min(xp, s.xp) : 0;
+    if (loss <= 0) continue;
+    s.xp -= loss;
+    s.rank = rankForXp(s.xp);
+    state.totalXp -= loss;
+    removed[stat] = loss;
+  }
+
+  return removed;
 }
 
 // ---------- views ----------
