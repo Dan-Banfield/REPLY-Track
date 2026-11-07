@@ -2,7 +2,7 @@
 
 How the app works under the hood: project setup, auth flow, route protection, roles, Supabase setup, data flow and key files. Read it together with [`ux.md`](./ux.md), which covers the UI and design.
 
-_Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
+_Last updated: step 5 of 7 (dashboard layout and navigation)._
 
 ---
 
@@ -27,8 +27,9 @@ _Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
   - RLS: users can read only their own profile and can never change it
   
   The app reads the role from `profiles` in `getCurrentUser()`.
-- **Logout**: a Server Action ends the session, then a full page load goes to `/login`.
-- `/dashboard` is a **placeholder** page ("Signed in as … (Teacher/Student)" and a "Log out" button). Steps 5–6 replace it with the real layout and Overview page. There is no page at `/`; the proxy always redirects it.
+- **Logout**: a Server Action ends the session, then a full page load goes to `/login`. It's triggered from the navigation rail, or from the error page.
+- **Dashboard layout** (`src/app/dashboard/layout.tsx`): every page under `/dashboard` gets an M3 navigation rail. Its items come from one config array (`src/config/navigation.ts`), filtered by the user's role on the server (details in `ux.md`).
+- **Overview** (`/dashboard`) is still placeholder content ("Signed in as … (Teacher/Student)"). Step 6 makes it role-specific. There is no page at `/`; the proxy always redirects it.
 - **Error page** (`src/app/error.tsx`): any page that fails to load (e.g. a missing profile) shows "Something went wrong" with **Try again** and **Log out**, so users are never stuck.
 - `npm run build`, `npm run lint` and `npx tsc --noEmit` all pass.
 - The SQL was tested in PGlite (Postgres 17 in WebAssembly) with a stand-in for Supabase's `auth` schema and API roles. Coverage: re-running the script, backfill, the trigger with valid/invalid/missing roles, RLS (own-row read; update/insert/delete denied; `anon` denied) and cascade delete. It has **not yet been run in a real Supabase project**.
@@ -39,13 +40,14 @@ _Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
   - all sign-up and login form paths
   - the role shown for a teacher and a student
   - the error page for a user without a profile
+  - the navigation rail: items per role, active state, icons, keyboard focus, Log out
+  - adding a teacher-only page via the config (in a throwaway copy)
   
   **Not yet tested against a real Supabase project**, because `.env` still has placeholders.
 
 **Not built yet**
 
-- Dashboard layout and navigation (step 5), Overview page (step 6), README (step 7).
-- Nothing in the UI depends on the role yet besides the placeholder text (steps 5–6).
+- Role-specific Overview content (step 6), README (step 7).
 - No password-reset page (out of scope).
 
 ---
@@ -73,13 +75,20 @@ _Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
 │   │   │   ├── auth.module.css
 │   │   │   ├── login/        # /login: page.tsx (+ post-sign-up notice), LoginForm.tsx
 │   │   │   └── signup/       # /signup: page.tsx, SignupForm.tsx
-│   │   └── dashboard/        # /dashboard: PLACEHOLDER page (steps 5–6 replace it)
-│   │       ├── page.tsx
+│   │   └── dashboard/        # Everything under /dashboard (login required)
+│   │       ├── layout.tsx        # Shell: navigation rail (role-filtered) + <main>
+│   │       ├── layout.module.css
+│   │       ├── page.tsx          # /dashboard = Overview (placeholder content until step 6)
 │   │       └── page.module.css
+│   ├── config/
+│   │   └── navigation.ts     # NAV_ITEMS: the one list of dashboard pages (label, href, icon, roles)
 │   ├── components/
 │   │   ├── auth/
-│   │   │   └── LogoutButton.tsx  # Calls logout(), then full page load to /login
-│   │   └── material/         # Material Web registration, JSX types, MaterialForm (see ux.md)
+│   │   │   └── LogoutButton.tsx  # useLogout() hook + standalone outlined Log out button
+│   │   ├── navigation/
+│   │   │   ├── NavigationRail.tsx    # M3 rail built from NAV_ITEMS (+ NavigationRailSkeleton)
+│   │   │   └── NavigationRail.module.css
+│   │   └── material/         # Material Web registration, JSX types, MaterialForm, icon font URL (see ux.md)
 │   ├── lib/
 │   │   ├── auth/
 │   │   │   ├── actions.ts    # Server Actions: login, signup, logout
@@ -102,7 +111,7 @@ Conventions:
 - Pages and their route-only components live in the route folder. Shared logic lives in `src/lib/`; shared UI lives in `src/components/`.
 - Route paths used in code come from `src/lib/auth/routes.ts`, not string literals.
 - Database changes go in a **new** file in `supabase/migrations/` named `<YYYYMMDDHHMMSS>_<what>.sql` (the Supabase CLI convention). Never edit a file that has already been run in a real project. Write migrations so they can be re-run safely (`if not exists`, `drop … if exists`, `on conflict do nothing`).
-- Planned homes for later steps: `src/config/` (navigation config), `src/app/dashboard/layout.tsx` (dashboard shell). Update this tree when they are added.
+- New app pages go under `src/app/dashboard/` and get one entry in `src/config/navigation.ts` (see ux.md, "Navigation config"). App-wide configuration lives in `src/config/`.
 
 ### Key files
 
@@ -119,8 +128,12 @@ Conventions:
 | `src/lib/auth/actions.ts` | Server Actions `login`, `signup` (both via `useActionState`) and `logout`. |
 | `src/lib/auth/routes.ts` | `LOGIN_PATH` (`/login`), `HOME_PATH` (`/dashboard`), `PUBLIC_PATHS` (`/login`, `/signup`). |
 | `src/lib/auth/roles.ts` | The role list (`teacher`, `student`), `Role` type, display labels and `isRole()` guard. Use it everywhere roles appear. |
-| `src/components/auth/LogoutButton.tsx` | M3 outlined "Log out" button. Calls `logout()`, then `window.location.assign('/login')`. |
-| `src/app/dashboard/page.tsx` | Placeholder protected page. Shows the user via `getCurrentUser()` inside `<Suspense>`. |
+| `src/components/auth/LogoutButton.tsx` | `useLogout()` (calls `logout()`, then `window.location.assign('/login')`) and the standalone outlined `LogoutButton` (used on the error page). |
+| `src/config/navigation.ts` | `NAV_ITEMS` (label, href, icon, roles) and `navItemsFor(role)`. Adding a page = one entry. |
+| `src/app/dashboard/layout.tsx` | Dashboard shell. Inside `<Suspense>`, `RoleNavigation` calls `getCurrentUser()` and renders `<NavigationRail items={navItemsFor(role)} />`. |
+| `src/components/navigation/NavigationRail.tsx` | Client component: M3 rail from the given items, active item from `usePathname()`, Log out at the bottom. |
+| `src/components/material/material-symbols.ts` | Builds the Google Fonts URL for the icon font from the icons in `NAV_ITEMS` + `OTHER_ICONS`. |
+| `src/app/dashboard/page.tsx` | Overview page (placeholder content). Shows the user via `getCurrentUser()` inside `<Suspense>`. |
 | `src/app/(auth)/login/page.tsx` | Login page. Reads `?signup=confirm|done` (behind `<Suspense>`) to show the post-sign-up notice. |
 | `src/app/(auth)/signup/SignupForm.tsx` | Sign-up form with the role radio group. |
 | `src/components/material/MaterialWeb.tsx` | The one place where Material Web components are imported/registered (plus the hydration rule; see ux.md). |
@@ -143,7 +156,7 @@ partialPrefetching: true,
 
 - Data is dynamic by default; nothing is cached unless marked with `'use cache'`.
 - Reading request data (`cookies()`, `headers()`, `searchParams`, and therefore the Supabase session) **outside a `<Suspense>` boundary is a build error**. Anything that depends on the logged-in user or the query string must render inside `<Suspense>`. Examples: `SignedInAs` in `src/app/dashboard/page.tsx`, `SignupNotice` in the login page.
-- Don't `await` the session at the top level of a layout. Push the read down into a component inside a boundary (relevant for the dashboard layout in step 5).
+- Don't `await` the session at the top level of a layout. Push the read down into a component inside a boundary, as `RoleNavigation` in `src/app/dashboard/layout.tsx` does.
 - **`createClient()` calls `await io()`** after reading cookies. Partial Prefetching can prerender pages *with* the user's cookies (a per-session shell). Supabase then compares token expiry with `Date.now()`, which Next rejects during prerendering ("encountered the unstable value `Date.now()`"). `io()` tells Next that time-dependent work follows: it resolves immediately during real requests and Server Actions, and keeps the session read out of prerendered shells. Don't remove it.
 - Server Actions can read and write cookies freely; the Suspense rule only applies to rendering.
 - `/signup` is fully static. `/login` and `/dashboard` are static shells with a small streamed part. Keep auth pages free of session reads; the proxy handles "already logged in".
@@ -227,12 +240,40 @@ getClaims()  → verified user id + email
 
 - Use `const { role } = await getCurrentUser()` in Server Components (inside `<Suspense>`), Server Actions and Route Handlers. Use `ROLE_LABELS[role]` for display.
 - **Never** read the role from `user_metadata` or from the JWT's `user_metadata` claim; users can edit those.
-- There is no client-side copy of the role yet. Step 5 passes it from the server layout to the navigation.
+- The browser never receives the role directly. The dashboard layout filters `NAV_ITEMS` on the server and sends only the allowed items to the rail. `getCurrentUser()` is called by both the layout (for the rail) and the page; React `cache()` makes that one lookup per request.
+
+### Role-restricted pages
+
+`NAV_ITEMS[].roles` only decides **who sees the link**. It doesn't protect the page: any logged-in user can type the URL. A page meant for some roles must check the role itself, on the server, where it reads its data:
+
+```tsx
+// src/app/dashboard/classes/page.tsx (teacher-only example)
+import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
+import { getCurrentUser } from '@/lib/auth/session';
+
+export default function ClassesPage() {
+  return (
+    <Suspense fallback={<p>Loading…</p>}>
+      <TeacherOnlyContent />
+    </Suspense>
+  );
+}
+
+async function TeacherOnlyContent() {
+  const { role } = await getCurrentUser();
+  if (role !== 'teacher') notFound(); // or redirect('/dashboard')
+  return <h1>Classes</h1>;
+}
+```
+
+- Server Actions that change role-specific data must check the role the same way, and the database should enforce it with RLS (e.g. a policy that looks up `profiles.role` for `auth.uid()`).
+- No page needs this yet: Overview is for both roles.
 
 **Common admin tasks:**
 
 - *Change a user's role:* Supabase → Table Editor → `profiles` → edit `role`, or run `update public.profiles set role = 'teacher' where id = '<user uuid>';` The user sees the new role on their next page load.
-- *Add a role (e.g. `admin`):* write a new migration with `alter type public.user_role add value 'admin';`. Then add it to `ROLES` and `ROLE_LABELS` in `src/lib/auth/roles.ts`, and to the navigation config (step 5). The sign-up form lists every entry in `ROLES`, so remove any role users shouldn't pick there.
+- *Add a role (e.g. `admin`):* write a new migration with `alter type public.user_role add value 'admin';`. Then add it to `ROLES` and `ROLE_LABELS` in `src/lib/auth/roles.ts`, and to the `roles` of the relevant entries in `src/config/navigation.ts`. The sign-up form lists every entry in `ROLES`, so remove any role users shouldn't pick there.
 
 ### Auth flow: login
 
@@ -337,13 +378,13 @@ Planned build order. Each step is reviewed and committed separately.
 - [x] **2. Supabase**: browser and server clients, login page (email/password), sign-up page with role choice
 - [x] **3. Route protection**: proxy with session refresh and redirects, server-side `getCurrentUser()`, logout
 - [x] **4. Roles**: `profiles` table + `user_role` enum, sign-up trigger, backfill, RLS (read own, never change role), role in `getCurrentUser()`, error page
-- [ ] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with navigation built from a config array (role-aware) and the logout button (move `LogoutButton` there). Read the role with `getCurrentUser()` inside `<Suspense>` in the layout's nav component, not at the layout's top level.
-- [ ] **6. Overview page**: replace the placeholder `src/app/dashboard/page.tsx` with different placeholder content for teachers and students
+- [x] **5. Dashboard layout**: `src/app/dashboard/layout.tsx` with an M3 navigation rail built from `NAV_ITEMS` (filtered by role on the server), Log out in the rail
+- [ ] **6. Overview page**: replace the placeholder content in `src/app/dashboard/page.tsx` with different placeholder content for teachers and students (read `role` from `getCurrentUser()` inside `<Suspense>`)
 - [ ] **7. README**: install, env vars, Supabase settings, SQL, run locally
 
 Left unfinished on purpose:
 
-- `/dashboard` is a bare placeholder (heading, email + role, logout button).
+- The Overview page content is a placeholder (heading, email + role).
 - `src/lib/supabase/client.ts` exists but has no caller yet.
 - Database types are not generated. Query results are validated at runtime (`isRole`). When more tables arrive, consider `npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts` and pass the `Database` type to the clients.
 - Each protected page load makes two Supabase calls for the user (claims + profile). If that becomes a bottleneck, a Supabase *custom access token hook* can put the role into the JWT instead.
@@ -354,6 +395,7 @@ Left unfinished on purpose:
 ## Gotchas
 
 - **This is Next.js 16, not the version most examples online use.** Check the bundled docs in `node_modules/next/dist/docs/` before writing Next-specific code (see `AGENTS.md`). In particular, `middleware.ts` is deprecated and renamed to **`proxy.ts`** (export `proxy` instead of `middleware`). It runs on the Node.js runtime.
+- **Hiding a nav item is not access control.** See [Role-restricted pages](#role-restricted-pages).
 - **Don't rely on the proxy alone.** Call `getCurrentUser()` in every protected page, Server Action and Route Handler. Next's docs warn that a matcher change or moving a Server Action can silently remove proxy coverage.
 - **Keep refreshed cookies on every proxy response**, including redirects (see [Route protection](#route-protection)). Refresh tokens are single-use, so dropping them signs users out.
 - **Proxy cost per request:** `getClaims()` verifies the token locally only when the Supabase project uses the newer asymmetric JWT signing keys. With legacy symmetric keys it calls Supabase Auth on **every** request (proxy + `getCurrentUser()`). If pages feel slow, switch the project to asymmetric keys (Project Settings → JWT Keys).

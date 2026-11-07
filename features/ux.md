@@ -2,7 +2,7 @@
 
 The Material 3 theme, the components used, the layout, how navigation works and what each role sees. Read it together with [`logic.md`](./logic.md), which covers the app logic.
 
-_Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
+_Last updated: step 5 of 7 (dashboard layout and navigation)._
 
 ---
 
@@ -12,18 +12,20 @@ _Last updated: step 4 of 7 (roles: `profiles` table and reading the role)._
 
 - Material Design 3 theme with **light and dark** colour schemes (dark follows the OS setting).
 - Roboto font and the official M3 **type scale** classes.
-- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`.
+- Material Web components are registered and type-safe in JSX. Currently registered: `md-filled-button`, `md-outlined-button`, `md-text-button`, `md-radio`, `md-outlined-text-field`, `md-icon`, `md-ripple`, `md-focus-ring`.
+- **Material Symbols** icons (Outlined), loaded from Google Fonts and limited to the icons the app uses.
 - **Login page** (`/login`) and **sign-up page** (`/signup`), sharing one M3 outlined-card layout. Each links to the other.
-- **Dashboard placeholder** (`/dashboard`): "Dashboard" heading, "Signed in as … (Teacher)" or "(Student)", and an M3 outlined **Log out** button. Steps 5–6 replace it.
+- **Dashboard layout** (`/dashboard/**`): an M3 **navigation rail** on the left, page content on the right. The rail is built from one config array (`src/config/navigation.ts`), filtered by role, with **Log out** at the bottom. It currently has one destination: **Overview** (`/dashboard`).
+- **Overview page** (`/dashboard`): placeholder "Overview" heading with "Signed in as … (Teacher)" or "(Student)". Step 6 adds the role-specific content.
 - **Error page** for every route: "Something went wrong" with **Try again** (filled) and **Log out** (outlined).
 - Users never see a page at `/`. They are redirected to `/login` or `/dashboard`.
 - Reusable form building blocks: `MaterialForm`, `SubmitButton`, `FormError` (`src/components/material/MaterialForm.tsx`).
-- Page titles use the template `<Page> · REPLY Track` (e.g. "Sign in · REPLY Track", "Dashboard · REPLY Track").
+- Page titles use the template `<Page> · REPLY Track` (e.g. "Sign in · REPLY Track", "Overview · REPLY Track").
 - No hydration warnings in the dev console (see the [hydration rule](#hydration-rule-for-material-web-elements)).
 
 **Not built yet**
 
-- Dashboard layout, navigation, Overview page and role-specific content. See [Next steps](#next-steps).
+- Role-specific Overview content (step 6). See [Next steps](#next-steps).
 
 ---
 
@@ -59,8 +61,10 @@ Because the elements start up *before* React hydrates, some of them add attribut
 | --- | --- |
 | `md-outlined-text-field` | `inputmode=""` |
 | `md-radio` | `tabindex` (managed by the radio group for keyboard focus) |
+| `md-ripple` | `aria-hidden="true"` |
+| `md-focus-ring` | `aria-hidden="true"` |
 
-Buttons (`md-filled-button`, `md-outlined-button`, `md-text-button`) don't need it. When you register a new component, load a page that uses it with `npm run dev` and check the console for that message. If it appears, add the element to this table and to the comment in `MaterialWeb.tsx`. The warning only affects that one element's attributes, so it doesn't hide problems elsewhere.
+Buttons (`md-filled-button`, `md-outlined-button`, `md-text-button`) and `md-icon` (when you pass `aria-hidden="true"` yourself) don't need it. When you register a new component, load a page that uses it with `npm run dev` and check the console for that message. If it appears, add the element to this table and to the comment in `MaterialWeb.tsx`. The warning only affects that one element's attributes, so it doesn't hide problems elsewhere.
 
 ### Theme (design tokens)
 
@@ -72,6 +76,16 @@ All theme values live in **`src/theme/theme.css`**:
 - **Shape, elevation, motion:** Material Web's built-in M3 defaults. Nothing is overridden. App CSS may read shape tokens with a fallback, e.g. `var(--md-sys-shape-corner-medium, 12px)`.
 
 **To change the brand colour:** open [Material Theme Builder](https://material-foundation.github.io/material-theme-builder/), pick a seed colour, export **Web (CSS)**, and replace the `--md-sys-color-*` values in both blocks of `theme.css` (light → `:root`, dark → the media query). Keep the token names; every component reads them.
+
+### Icons (Material Symbols)
+
+- `<md-icon>name</md-icon>` renders a [Material Symbols](https://fonts.google.com/icons) icon by name (Outlined style, 24px).
+- The font is a stylesheet `<link>` in `src/app/layout.tsx`. Its URL is built in `src/components/material/material-symbols.ts` and asks Google Fonts for **only the icons the app uses** (`&icon_names=…`), so the download stays a few KB. The list is made automatically from:
+  - every `icon` in `NAV_ITEMS` (`src/config/navigation.ts`), and
+  - `OTHER_ICONS` in `material-symbols.ts` (currently `logout`).
+- **Using an icon anywhere outside the nav config? Add its name to `OTHER_ICONS`**, or it shows up as plain text (e.g. the word "settings").
+- The FILL axis is included: `font-variation-settings: 'FILL' 1` gives the filled version (used for the active rail item).
+- `next/font` doesn't support Material Symbols, which is why this one font comes straight from Google Fonts.
 
 ### Typography
 
@@ -168,16 +182,54 @@ They exist because three things break with a plain `<form action>` and Material 
 
 Material Web fields and radios are form-associated, so `new FormData(form)` picks up their values by `name`, like native inputs.
 
-### Dashboard placeholder (`/dashboard`)
+### Dashboard layout (`src/app/dashboard/layout.tsx`)
+
+Every page under `/dashboard` gets this shell:
 
 ```
-Dashboard                                ← headline-medium
+┌──────┬─────────────────────────────────────────────┐
+│ ▣    │ Overview                  ← page <h1>        │
+│Overv.│ Signed in as you@x.com (Teacher)             │
+│      │                                              │
+│      │   <main>: the page, 24px padding             │
+│      │                                              │
+│ ⇥    │                                              │
+│Log out│                                             │
+└──────┴─────────────────────────────────────────────┘
+ 80px rail (surface-container), sticky, full height
+```
+
+- `<div class="shell">` is a flex row: the rail, then `<main class="content">` (flex: 1, padding 24px).
+- The rail depends on the user's role, so it streams in behind `<Suspense>`. The fallback is `NavigationRailSkeleton`, an empty rail of the same size and colour, so the content never shifts.
+- The rail stays visible at all widths (it takes 80px on a 360px phone; tested without horizontal scrolling).
+
+### Navigation rail (`src/components/navigation/NavigationRail.tsx`)
+
+M3 spec: https://m3.material.io/components/navigation-rail. Material Web has no rail component, so it is composed from stable parts and styled with tokens (`NavigationRail.module.css`):
+
+| Part | Implementation | Tokens |
+| --- | --- | --- |
+| Container | `<nav aria-label="Main">`, 80px wide, `position: sticky`, full height, destinations from 44px down, 12px apart | `surface-container` |
+| Destination | Next `<Link>` (client-side navigation), a column of indicator + label | label `on-surface-variant`, active label `on-surface` |
+| Active indicator | 56×32 pill (`corner-full`) around the icon | `secondary-container`; icon `on-secondary-container`, filled (`'FILL' 1`) |
+| Icon | `<md-icon aria-hidden="true">` | inactive `on-surface-variant`, outlined |
+| Label | `md-typescale-label-medium` | |
+| Hover / press | `<md-ripple for={id}>` inside the pill: reacts to the whole item, draws on the pill | on-surface (active: on-secondary-container) |
+| Keyboard focus | `<md-focus-ring for={id}>` inside the pill | `secondary` |
+| Log out | Same visual as a destination (`logout` icon), a `<button>` pinned to the bottom (`margin-top: auto`). Disabled at 38% opacity while signing out | |
+
+- **Active item:** the destination whose `href` is the longest prefix of the current URL. `/dashboard/classes` highlights "Classes", not "Overview". It gets `aria-current="page"`.
+- **Accessibility:** a real `<nav>` with a `<ul>` of links; icons are hidden from screen readers because the label names the item. Tab order: destinations top to bottom, then Log out.
+- **Log out** in the rail uses `useLogout()` from `src/components/auth/LogoutButton.tsx`, the same behaviour as the standalone `LogoutButton` (full page load to `/login`).
+
+### Overview page (`/dashboard`, placeholder)
+
+```
+Overview                                 ← headline-medium
 Signed in as you@example.com (Teacher)   ← body-large, streams in ("Loading…" first)
-( Log out )                              ← md-outlined-button (LogoutButton)
 ```
 
-- A simple centred column (max 640px). It exists only so login, route protection and logout can be checked. Step 5 wraps `/dashboard` in the real layout and moves the logout button into the navigation; step 6 replaces the content with the Overview page.
-- **Log out** shows "Logging out…" (disabled) while it works, then does a full page load to `/login`, which comes up empty.
+- Step 6 replaces this with different placeholder content for teachers and students.
 - The role label comes from `ROLE_LABELS` in `src/lib/auth/roles.ts`.
 
 ### Error page (`src/app/error.tsx`)
@@ -190,24 +242,48 @@ This page couldn't be loaded. Try again, or log out and sign in again.   ← bod
 
 - Shown in place of any page below the root layout that throws while loading. That includes the dashboard and its future layout, e.g. when a user has no profile row because the SQL wasn't run.
 - **Try again** re-fetches and re-renders the page (Next's `retry()`). **Log out** is the same `LogoutButton`, so a signed-in user can always get back to `/login`.
-- Same simple column layout as the dashboard placeholder. It uses inline styles instead of a CSS Module on purpose (see [Gotchas](#gotchas)).
+- A simple column (max 640px). It replaces the whole page including the dashboard rail, which is why it has its own Log out button. It uses inline styles instead of a CSS Module on purpose (see [Gotchas](#gotchas)).
 
-### Layout
+### Navigation config (`src/config/navigation.ts`)
 
-Not built yet. Step 5 adds the dashboard layout and navigation. This section will describe it.
+The rail is built from one array. Each entry:
 
-### Navigation config
+```ts
+{
+  label: 'Overview',            // text under the icon (keep it to one short word)
+  href: '/dashboard',           // page URL (keep pages under /dashboard to get the layout)
+  icon: 'dashboard',            // Material Symbols name: https://fonts.google.com/icons
+  roles: ['teacher', 'student'] // who sees it in the rail
+}
+```
 
-Not built yet. Step 5 adds a single config array (one entry per page, with the roles that can see it). This section will explain how to add a page.
+Order in the array = order in the rail. `navItemsFor(role)` returns the entries a role may see. The dashboard layout calls it with the user's role (from `getCurrentUser()`) and passes the result to the rail.
+
+**How to add a page (example: a teacher-only "Classes" page)**
+
+1. Create the page: `src/app/dashboard/classes/page.tsx` (it automatically gets the dashboard layout and is login-protected by the proxy). Give it `export const metadata = { title: 'Classes' }`.
+2. Add one entry to `NAV_ITEMS`:
+   ```ts
+   { label: 'Classes', href: '/dashboard/classes', icon: 'school', roles: ['teacher'] },
+   ```
+   The icon is added to the icon font automatically.
+3. **If the page is not for every role, also check the role in the page itself.** `roles` only hides the rail item; a student could still type the URL. See logic.md, "Role-restricted pages".
+
+This exact example was tried during step 5 (in a throwaway copy): teachers saw Overview + Classes, students only Overview, the `school` icon loaded, and opening Classes highlighted it.
 
 ### What each role sees
 
 | Visitor | Can open | Redirected |
 | --- | --- | --- |
 | Logged out | `/login`, `/signup` | everything else → `/login` |
-| Logged in (teacher or student) | `/dashboard` (placeholder) | `/`, `/login`, `/signup` → `/dashboard` |
+| Logged in (teacher or student) | `/dashboard` (Overview) | `/`, `/login`, `/signup` → `/dashboard` |
 
-The role is chosen at sign-up, stored in `profiles` and read on the server (see logic.md, "Roles"). So far the only visible difference is the label on the dashboard placeholder: "(Teacher)" or "(Student)". Step 5 filters the navigation by role and step 6 shows different Overview content.
+| | Teacher | Student |
+| --- | --- | --- |
+| Navigation rail | Overview, Log out | Overview, Log out |
+| Overview page | placeholder + "(Teacher)" | placeholder + "(Student)" |
+
+The rail is already filtered by role, but the only entry (Overview) is for both roles. Step 6 gives the Overview page different content per role.
 
 ---
 
@@ -216,22 +292,29 @@ The role is chosen at sign-up, stored in `profiles` and read on the server (see 
 - [x] **Step 2:** login page and sign-up page (with role choice), using M3 text fields, radios and buttons.
 - [x] **Step 3:** removed the temporary page at `/` (it now redirects), added the dashboard placeholder and the Log out button.
 - [x] **Step 4:** the role is shown on the dashboard placeholder; error page with Try again / Log out.
-- [ ] **Step 5:** dashboard layout with an M3 navigation rail or drawer built from the config array, plus logout. Material Symbols icons will be added then. `next/font` doesn't ship Material Symbols, so it will be a separate font import.
+- [x] **Step 5:** dashboard layout with an M3 navigation rail built from the config array (role-filtered), Log out in the rail, Material Symbols icons.
 - [ ] **Step 6:** Overview page with different placeholder content for teachers and students.
-- Possible later additions (not requested): a "confirm password" field on sign-up, and a password-reset flow.
+- Possible later additions (not requested):
+  - a "confirm password" field on sign-up and a password-reset flow
+  - on phones (< 600px wide), M3 recommends a bottom *navigation bar* instead of a rail; it could be rendered from the same `NAV_ITEMS`
+  - a top app bar showing the page title or user
 
 ---
 
 ## Gotchas
 
-- **Material Web is in maintenance mode upstream** (stable releases, few new components). The navigation drawer/bar exist only under `@material/web/labs/` (unstable API), and there is no navigation rail component at all. The rail/drawer in step 5 may need to be composed from stable parts (list, ripple, focus ring, icon) styled with M3 tokens.
-- **Text fields and radios need `suppressHydrationWarning`** ([hydration rule](#hydration-rule-for-material-web-elements)). Without it, the dev console shows a hydration error on every page with a form.
+- **Material Web is in maintenance mode upstream** (stable releases, few new components). The navigation drawer/bar exist only under `@material/web/labs/` (unstable API), and there is no navigation rail component at all. That's why the rail is composed from stable parts (`md-icon`, `md-ripple`, `md-focus-ring`) in `NavigationRail.tsx`. Prefer the same approach over `labs/` components.
+- **Use `for`, not `htmlFor`, on `md-ripple` / `md-focus-ring`.** React renders `htmlFor` on custom elements as a literal `htmlfor` attribute in the server HTML, so after a full page load the ripple/focus ring silently attach to their parent instead of the intended element. `for` is typed in `material-web.d.ts`. Its value must be a CSS-safe id (letters, digits, `-`), because Material Web looks it up with `querySelector('#id')`. Don't use React's `useId()` for it.
+- **No ids or controls in Suspense fallbacks that mirror the real UI.** While streaming, React keeps the finished content in a hidden container next to the visible fallback, so duplicate ids exist for a moment. That's why the rail fallback is an empty `NavigationRailSkeleton`.
+- **Icons outside the nav config must be listed in `OTHER_ICONS`** (`src/components/material/material-symbols.ts`), otherwise the icon name shows as text.
+- **The icon font is an external request to Google Fonts** (fonts.googleapis.com / fonts.gstatic.com). If a Content Security Policy is added later, allow those hosts. Offline, icons show as their names.
+- **Text fields, radios, ripples and focus rings need `suppressHydrationWarning`** ([hydration rule](#hydration-rule-for-material-web-elements)). Without it, the dev console shows a hydration error on every page with a form.
 - **Build forms with `MaterialForm` / `SubmitButton`** ([see above](#forms-with-material-web-use-the-shared-components)). Plain `type="submit"` on an `md-*-button` or `<form action>` breaks in subtle ways.
 - **Radios have no M3 error styling.** An unselected required radio group is reported with the browser's native validation bubble, not with red M3 text.
 - **Use kebab-case attributes for string config** on Material Web tags, exactly as in the material-web.dev docs (e.g. `supporting-text="…"`). These are rendered into the server HTML, so the first paint is correct. camelCase props (e.g. `supportingText`) are only applied as properties after the browser loads the JS. TypeScript allows any hyphenated attribute without type checking, so double-check spelling. Exception: properties whose attribute is just the lowercased name (e.g. `minLength` → `minlength`) work either way.
 - **Undefined custom elements are hidden** (`:not(:defined) { visibility: hidden }` in `globals.css`) to avoid a flash of unstyled text before the JS loads. If JavaScript fails to load, Material Web components stay invisible.
 - **Some Material Web props are typed loosely by the library itself.** For example, `type` on buttons is `string`, so `type="nope"` is not caught by TypeScript.
-- **`md-*-button href="…"` renders a plain link** inside its shadow DOM, so navigation is a full page load, not a Next.js client-side transition. That's fine for the auth pages. For app navigation (step 5), use Next's `<Link>` or `router.push`.
+- **`md-*-button href="…"` renders a plain link** inside its shadow DOM, so navigation is a full page load, not a Next.js client-side transition. That's fine for the auth pages. For in-app navigation use Next's `<Link>` (as the rail does) or `router.push`.
 - **Error boundaries (`error.tsx`) must not import a CSS file.** Next preloads an error boundary's CSS on every page, and since the error page is normally not shown, the browser logs "…was preloaded using link preload but not used". `src/app/error.tsx` therefore uses inline styles (still token-based). Do the same for any future `error.tsx`.
 - **"Lit is in dev mode" console message** appears only with `npm run dev`. It is expected and does not appear in production builds.
 - **Dark mode follows the OS.** There is no in-app toggle (out of scope).

@@ -1,0 +1,79 @@
+/* M3 navigation rail: 80px wide, destinations at the top, Log out at the bottom. */
+.rail {
+  position: sticky;
+  top: 0;
+  flex: none;
+  width: 80px;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 44px 0 24px;
+  background: var(--md-sys-color-surface-container);
+}
+
+.destinations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* One destination: indicator pill above a label. Used for links and the Log out button. */
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 80px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--md-sys-color-on-surface-variant);
+  text-decoration: none;
+  cursor: pointer;
+  outline: none; /* md-focus-ring draws the focus indicator */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.item[aria-current='page'] {
+  color: var(--md-sys-color-on-surface);
+}
+
+.indicator {
+  position: relative; /* md-ripple and md-focus-ring position themselves on this pill */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 32px;
+  border-radius: var(--md-sys-shape-corner-full, 9999px);
+}
+
+.indicator[data-active] {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  --md-ripple-hover-color: var(--md-sys-color-on-secondary-container);
+  --md-ripple-pressed-color: var(--md-sys-color-on-secondary-container);
+}
+
+.indicator md-icon {
+  font-variation-settings: 'FILL' 0;
+}
+
+.indicator[data-active] md-icon {
+  font-variation-settings: 'FILL' 1;
+}
+
+.logout {
+  margin-top: auto;
+}
+
+.logout:disabled {
+  cursor: default;
+  opacity: 0.38;
+}

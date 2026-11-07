@@ -1,23 +1,15 @@
-.main {
+.page {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 48px 24px;
+  max-width: 960px;
 }
 
-.main h1,
-.main p {
+.page h1,
+.page p {
   margin: 0;
 }
 
-.main p {
+.page p {
   color: var(--md-sys-color-on-surface-variant);
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }

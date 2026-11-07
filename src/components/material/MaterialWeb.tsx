@@ -15,13 +15,18 @@
  * the `suppressHydrationWarning` prop wherever they are used:
  *   - md-outlined-text-field (adds inputmode="")
  *   - md-radio               (adds tabindex)
+ *   - md-ripple              (adds aria-hidden)
+ *   - md-focus-ring          (adds aria-hidden)
  * When registering a new component, check the dev console for
  * "A tree hydrated but some attributes ... didn't match" and extend this list.
  */
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
+import '@material/web/focus/md-focus-ring.js';
+import '@material/web/icon/icon.js';
 import '@material/web/radio/radio.js';
+import '@material/web/ripple/ripple.js';
 import '@material/web/textfield/outlined-text-field.js';
 
 export function MaterialWeb() {

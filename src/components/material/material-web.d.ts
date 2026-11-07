@@ -22,7 +22,14 @@ type ElementProps<T> = {
 };
 
 type MdElementProps<T extends HTMLElement> = ElementProps<T> &
-  DetailedHTMLProps<HTMLAttributes<T>, T>;
+  DetailedHTMLProps<HTMLAttributes<T>, T> & {
+    /**
+     * HTML `for` attribute: id of the element an md-ripple / md-focus-ring
+     * reacts to. Use this, not `htmlFor`: React renders `htmlFor` on custom
+     * elements as a literal "htmlfor" attribute in server HTML.
+     */
+    for?: string;
+  };
 
 type MdIntrinsicElements = {
   [Tag in Extract<keyof HTMLElementTagNameMap, `md-${string}`>]: MdElementProps<

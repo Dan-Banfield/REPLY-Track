@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Roboto } from 'next/font/google';
 
+import { MATERIAL_SYMBOLS_URL } from '@/components/material/material-symbols';
 import { MaterialWeb } from '@/components/material/MaterialWeb';
 
 // Order matters: M3 tokens first, then the M3 type scale classes, then app globals.
@@ -22,6 +23,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" className={roboto.variable}>
+      <head>
+        {/* Icon font for <md-icon>, limited to the icons the app uses. */}
+        <link rel="stylesheet" href={MATERIAL_SYMBOLS_URL} />
+      </head>
       <body>
         <MaterialWeb />
         {children}
