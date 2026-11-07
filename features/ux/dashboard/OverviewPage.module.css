@@ -1,0 +1,15 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.page h1,
+.page p {
+  margin: 0;
+}
+
+.page p {
+  color: var(--md-sys-color-on-surface-variant);
+}
